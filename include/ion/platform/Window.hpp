@@ -1,7 +1,8 @@
 #pragma once
 
-#include <string>
 #include <cstdint>
+#include <functional>
+#include <string>
 
 namespace ion {
 
@@ -13,6 +14,8 @@ struct WindowConfig {
     uint32_t height = 720;
     bool resizable = true;
     bool fullscreen = false;
+
+    std::function<void(uint32_t width, uint32_t height)> onResize;
 };
 
 class Window {
@@ -35,6 +38,9 @@ public:
 
     uint32_t width() const;
     uint32_t height() const;
+
+    void setFullscreen(bool fullscreen);
+    bool isFullscreen() const;
 
     void* nativeHandle();
 

@@ -38,14 +38,14 @@ PHASE 1 - CORE ENGINE
 PHASE 2 - WINDOW AND PLATFORM SYSTEM
 ==================================================
 
-[ ] Window abstraction
-[ ] macOS Cocoa window backend
-[ ] Windows Win32 window backend
-[ ] Linux X11 window backend
+[x] Window abstraction
+[x] macOS Cocoa window backend
+[x] Windows Win32 window backend
+[x] Linux X11 window backend
 [ ] Linux Wayland window backend
-[ ] Window resizing
-[ ] Fullscreen support
-[ ] Multiple window support
+[x] Window resizing
+[x] Fullscreen support
+[x] Multiple window support
 
 
 ==================================================
@@ -59,6 +59,7 @@ PHASE 3 - INPUT SYSTEM
 [ ] Gamepad support
 [ ] Controller vibration
 [ ] Input mapping system
+[ ] UI framework(s)
 
 
 ==================================================

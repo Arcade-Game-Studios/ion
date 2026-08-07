@@ -52,6 +52,10 @@ elseif(UNIX)
         platform/linux/Paths.cpp
     )
     target_include_directories(ion_platform_linux PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    find_library(X11_LIBRARY NAMES X11)
+    if(X11_LIBRARY)
+        target_link_libraries(ion_platform_linux INTERFACE ${X11_LIBRARY})
+    endif()
 endif()
 
 if(ION_BUILD_EXAMPLES)

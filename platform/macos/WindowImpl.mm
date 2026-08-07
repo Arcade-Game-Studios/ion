@@ -15,6 +15,7 @@ struct Window::Impl {
     NSApplication* app = nil;
     NSWindow* window = nil;
     NSMenu* mainMenu = nil;
+    id resizeObserver = nil;
     WindowConfig config;
     bool open = false;
 };
@@ -156,6 +157,22 @@ bool Window::create() {
         [window center];
         [window makeKeyAndOrderFront:nil];
 
+        __block Window::Impl* blockImpl = impl;
+        impl->resizeObserver = [[NSNotificationCenter defaultCenter]
+            addObserverForName:NSWindowDidResizeNotification
+                        object:window
+                         queue:nil
+                    usingBlock:^(NSNotification* note) {
+                        NSWindow* w = (NSWindow*)note.object;
+                        NSRect content = [w contentRectForFrameRect:[w frame]];
+                        blockImpl->config.width = (uint32_t)content.size.width;
+                        blockImpl->config.height = (uint32_t)content.size.height;
+                        if (blockImpl->config.onResize) {
+                            blockImpl->config.onResize((uint32_t)content.size.width,
+                                                       (uint32_t)content.size.height);
+                        }
+                    }];
+
         impl->window = window;
         impl->app = app;
         impl->open = true;
@@ -165,6 +182,10 @@ bool Window::create() {
             [app activate];
         } else {
             [app activateIgnoringOtherApps:YES];
+        }
+
+        if (impl->config.fullscreen) {
+            setFullscreen(true);
         }
     }
 
@@ -176,6 +197,10 @@ void Window::destroy() {
         return;
     }
     @autoreleasepool {
+        if (impl->resizeObserver) {
+            [[NSNotificationCenter defaultCenter] removeObserver:impl->resizeObserver];
+            impl->resizeObserver = nil;
+        }
         if (impl->window) {
             [impl->window close];
             impl->window = nil;
@@ -230,6 +255,26 @@ uint32_t Window::height() const {
 
 void* Window::nativeHandle() {
     return (void*)CFBridgingRetain(impl->window);
+}
+
+void Window::setFullscreen(bool fullscreen) {
+    if (!impl || !impl->window) {
+        return;
+    }
+    @autoreleasepool {
+        if (impl->config.fullscreen == fullscreen) {
+            return;
+        }
+        impl->config.fullscreen = fullscreen;
+        [impl->window toggleFullScreen:nil];
+    }
+}
+
+bool Window::isFullscreen() const {
+    if (!impl || !impl->window) {
+        return impl ? impl->config.fullscreen : false;
+    }
+    return ([impl->window styleMask] & NSWindowStyleMaskFullScreen) != 0;
 }
 
 } // namespace ion
