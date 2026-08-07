@@ -15,6 +15,7 @@
 // Platform
 #include <ion/platform/Window.hpp>
 #include <ion/platform/Input.hpp>
+#include <ion/platform/Paths.hpp>
 
 // Rendering
 #include <ion/render/Renderer.hpp>

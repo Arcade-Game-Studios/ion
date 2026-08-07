@@ -1,5 +1,6 @@
 #include <ion/core/Application.hpp>
 #include <ion/core/Version.hpp>
+#include <ion/platform/Paths.hpp>
 #include <ion/platform/Window.hpp>
 
 #include <cstdio>
@@ -34,7 +35,7 @@ public:
         ion::WindowConfig config;
         config.title = "Ion Example";
         config.appName = "Ion";
-        config.iconPath = "assets/ion_default_window_icon.png";
+        config.iconPath = ion::getAssetPath("assets/ion_default_window_icon.png");
         config.width = 960;
         config.height = 540;
 

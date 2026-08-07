@@ -26,19 +26,25 @@ target_compile_definitions(ion_core PUBLIC
 if(APPLE)
     add_library(ion_platform_macos OBJECT
         platform/macos/WindowImpl.mm
+        platform/macos/Paths.mm
     )
-    set_source_files_properties(platform/macos/WindowImpl.mm PROPERTIES LANGUAGE OBJCXX)
+    set_source_files_properties(
+        platform/macos/WindowImpl.mm
+        platform/macos/Paths.mm
+        PROPERTIES LANGUAGE OBJCXX)
     target_include_directories(ion_platform_macos PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
     set_target_properties(ion_platform_macos PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(ion_platform_macos INTERFACE "-framework Cocoa")
 elseif(WIN32)
     add_library(ion_platform_windows OBJECT
         platform/windows/WindowImpl.cpp
+        platform/windows/Paths.cpp
     )
     target_include_directories(ion_platform_windows PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 elseif(UNIX)
     add_library(ion_platform_linux OBJECT
         platform/linux/WindowImpl.cpp
+        platform/linux/Paths.cpp
     )
     target_include_directories(ion_platform_linux PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endif()

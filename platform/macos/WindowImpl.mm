@@ -3,6 +3,7 @@
 // macOS Window Implementation (Cocoa)
 //
 #include <ion/platform/Window.hpp>
+#include <ion/platform/Paths.hpp>
 
 #include <Cocoa/Cocoa.h>
 
@@ -23,7 +24,8 @@ namespace {
 constexpr CGFloat DOCK_ICON_MARGIN_RATIO = 0.10f;
 
 NSString* findPlatformIconPath() {
-    NSString* dir = @"assets/icons/macos";
+    NSString* dir =
+        [NSString stringWithUTF8String:ion::getAssetPath("assets/icons/macos").c_str()];
     NSArray* files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir
                                                                         error:nil];
     for (NSString* file in files) {
