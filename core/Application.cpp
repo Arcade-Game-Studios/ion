@@ -17,6 +17,7 @@ void Application::run() {
     engine.setFrameCallback([this](float deltaTime) {
         update(deltaTime);
         render();
+        return !quitRequested_;
     });
 
     if (!engine.initialize()) {
@@ -26,6 +27,10 @@ void Application::run() {
     initialize();
     engine.run();
     shutdown();
+}
+
+void Application::quit() {
+    quitRequested_ = true;
 }
 
 } // namespace ion

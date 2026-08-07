@@ -2,6 +2,7 @@
 
 #include <ion/core/Log.hpp>
 #include <ion/core/Timer.hpp>
+#include <ion/platform/Input.hpp>
 
 #include <utility>
 
@@ -68,8 +69,11 @@ void Engine::run() {
         impl->window.pollEvents();
         float deltaTime = impl->timer.tick();
         if (impl->frameCallback) {
-            impl->frameCallback(deltaTime);
+            if (!impl->frameCallback(deltaTime)) {
+                break;
+            }
         }
+        ion::input::update();
     }
 }
 

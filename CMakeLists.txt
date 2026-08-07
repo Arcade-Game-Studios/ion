@@ -17,6 +17,7 @@ add_library(ion_core STATIC
     core/Application.cpp
     core/Config.cpp
     core/Engine.cpp
+    core/Input.cpp
     core/Log.cpp
     core/Memory.cpp
 )
@@ -32,24 +33,31 @@ if(APPLE)
     add_library(ion_platform_macos OBJECT
         platform/macos/WindowImpl.mm
         platform/macos/Paths.mm
+        platform/macos/InputImpl.mm
     )
     set_source_files_properties(
         platform/macos/WindowImpl.mm
         platform/macos/Paths.mm
+        platform/macos/InputImpl.mm
         PROPERTIES LANGUAGE OBJCXX)
     target_include_directories(ion_platform_macos PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
     set_target_properties(ion_platform_macos PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-    target_link_libraries(ion_platform_macos INTERFACE "-framework Cocoa")
+    target_link_libraries(ion_platform_macos INTERFACE
+        "-framework Cocoa"
+        "-framework GameController"
+        "-framework CoreHaptics")
 elseif(WIN32)
     add_library(ion_platform_windows OBJECT
         platform/windows/WindowImpl.cpp
         platform/windows/Paths.cpp
+        platform/windows/InputImpl.cpp
     )
     target_include_directories(ion_platform_windows PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 elseif(UNIX)
     add_library(ion_platform_linux OBJECT
         platform/linux/WindowImpl.cpp
         platform/linux/Paths.cpp
+        platform/linux/InputImpl.cpp
     )
     target_include_directories(ion_platform_linux PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
     find_library(X11_LIBRARY NAMES X11)
@@ -87,4 +95,8 @@ if(ION_BUILD_TESTS)
     add_executable(core_test tests/core_test.cpp)
     target_link_libraries(core_test PRIVATE ion_core)
     add_test(NAME core_test COMMAND core_test)
+
+    add_executable(input_test tests/input_test.cpp)
+    target_link_libraries(input_test PRIVATE ion_core)
+    add_test(NAME input_test COMMAND input_test)
 endif()

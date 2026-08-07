@@ -1,13 +1,89 @@
 #include <ion/platform/Window.hpp>
+#include <ion/platform/Input.hpp>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <windowsx.h>
 
 namespace ion {
 
 namespace {
+
+Key keyFromVirtualKey(unsigned int vk) {
+    if (vk >= 'A' && vk <= 'Z') {
+        return static_cast<Key>(static_cast<int>(Key::A) + (vk - 'A'));
+    }
+    if (vk >= '0' && vk <= '9') {
+        return static_cast<Key>(static_cast<int>(Key::Num0) + (vk - '0'));
+    }
+    if (vk >= VK_F1 && vk <= VK_F24) {
+        return static_cast<Key>(static_cast<int>(Key::F1) + (vk - VK_F1));
+    }
+    switch (vk) {
+    case VK_ESCAPE: return Key::Escape;
+    case VK_TAB: return Key::Tab;
+    case VK_CAPITAL: return Key::CapsLock;
+    case VK_SPACE: return Key::Space;
+    case VK_RETURN: return Key::Enter;
+    case VK_BACK: return Key::Backspace;
+    case VK_DELETE: return Key::Delete;
+    case VK_INSERT: return Key::Insert;
+    case VK_HOME: return Key::Home;
+    case VK_END: return Key::End;
+    case VK_PRIOR: return Key::PageUp;
+    case VK_NEXT: return Key::PageDown;
+    case VK_LEFT: return Key::ArrowLeft;
+    case VK_RIGHT: return Key::ArrowRight;
+    case VK_UP: return Key::ArrowUp;
+    case VK_DOWN: return Key::ArrowDown;
+    case VK_LSHIFT: return Key::LeftShift;
+    case VK_RSHIFT: return Key::RightShift;
+    case VK_LCONTROL: return Key::LeftControl;
+    case VK_RCONTROL: return Key::RightControl;
+    case VK_LMENU: return Key::LeftAlt;
+    case VK_RMENU: return Key::RightAlt;
+    case VK_LWIN: return Key::LeftSuper;
+    case VK_RWIN: return Key::RightSuper;
+    case VK_APPS: return Key::Menu;
+    case VK_OEM_1: return Key::Semicolon;
+    case VK_OEM_7: return Key::Apostrophe;
+    case VK_OEM_COMMA: return Key::Comma;
+    case VK_OEM_PERIOD: return Key::Period;
+    case VK_OEM_2: return Key::Slash;
+    case VK_OEM_5: return Key::Backslash;
+    case VK_OEM_MINUS: return Key::Minus;
+    case VK_OEM_PLUS: return Key::Equal;
+    case VK_OEM_4: return Key::LeftBracket;
+    case VK_OEM_6: return Key::RightBracket;
+    case VK_OEM_3: return Key::Backtick;
+    case VK_NUMPAD0: return Key::Keypad0;
+    case VK_NUMPAD1: return Key::Keypad1;
+    case VK_NUMPAD2: return Key::Keypad2;
+    case VK_NUMPAD3: return Key::Keypad3;
+    case VK_NUMPAD4: return Key::Keypad4;
+    case VK_NUMPAD5: return Key::Keypad5;
+    case VK_NUMPAD6: return Key::Keypad6;
+    case VK_NUMPAD7: return Key::Keypad7;
+    case VK_NUMPAD8: return Key::Keypad8;
+    case VK_NUMPAD9: return Key::Keypad9;
+    case VK_DECIMAL: return Key::KeypadDecimal;
+    case VK_DIVIDE: return Key::KeypadDivide;
+    case VK_MULTIPLY: return Key::KeypadMultiply;
+    case VK_SUBTRACT: return Key::KeypadSubtract;
+    case VK_ADD: return Key::KeypadAdd;
+    default: return Key::Unknown;
+    }
+}
+
+MouseButton mouseButtonFromWParam(WPARAM wParam) {
+    switch (HIWORD(wParam)) {
+    case XBUTTON1: return MouseButton::Button4;
+    case XBUTTON2: return MouseButton::Button5;
+    default: return MouseButton::None;
+    }
+}
 
 struct Window::Impl {
     HWND hwnd = nullptr;
@@ -42,6 +118,58 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         return 0;
     }
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN: {
+        Key key = keyFromVirtualKey((unsigned int)wParam);
+        if (key != Key::Unknown) {
+            input::platformKeyDown(key);
+        }
+        return 0;
+    }
+    case WM_KEYUP:
+    case WM_SYSKEYUP: {
+        Key key = keyFromVirtualKey((unsigned int)wParam);
+        if (key != Key::Unknown) {
+            input::platformKeyUp(key);
+        }
+        return 0;
+    }
+    case WM_LBUTTONDOWN:
+        input::platformMouseDown(MouseButton::Left);
+        return 0;
+    case WM_LBUTTONUP:
+        input::platformMouseUp(MouseButton::Left);
+        return 0;
+    case WM_RBUTTONDOWN:
+        input::platformMouseDown(MouseButton::Right);
+        return 0;
+    case WM_RBUTTONUP:
+        input::platformMouseUp(MouseButton::Right);
+        return 0;
+    case WM_MBUTTONDOWN:
+        input::platformMouseDown(MouseButton::Middle);
+        return 0;
+    case WM_MBUTTONUP:
+        input::platformMouseUp(MouseButton::Middle);
+        return 0;
+    case WM_XBUTTONDOWN:
+        input::platformMouseDown(mouseButtonFromWParam(wParam));
+        return TRUE;
+    case WM_XBUTTONUP:
+        input::platformMouseUp(mouseButtonFromWParam(wParam));
+        return TRUE;
+    case WM_MOUSEMOVE:
+        input::platformMouseMove((float)(int16_t)LOWORD(lParam),
+                                 (float)(int16_t)HIWORD(lParam));
+        return 0;
+    case WM_MOUSEWHEEL:
+        input::platformMouseScroll(0.0f,
+                                   (float)GET_WHEEL_DELTA_WPARAM(wParam) / 120.0f);
+        return 0;
+    case WM_MOUSEHWHEEL:
+        input::platformMouseScroll((float)GET_WHEEL_DELTA_WPARAM(wParam) / 120.0f,
+                                   0.0f);
+        return 0;
     case WM_CLOSE:
         if (impl) {
             impl->open = false;
@@ -168,6 +296,7 @@ void Window::pollEvents() {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    ion::input::pollGamepads();
 }
 
 uint32_t Window::width() const {

@@ -52,13 +52,13 @@ PHASE 2 - WINDOW AND PLATFORM SYSTEM
 PHASE 3 - INPUT SYSTEM
 ==================================================
 
-[ ] Keyboard input
-[ ] Mouse input
-[ ] Mouse position tracking
-[ ] Mouse buttons
-[ ] Gamepad support
-[ ] Controller vibration
-[ ] Input mapping system
+[x] Keyboard input
+[x] Mouse input
+[x] Mouse position tracking
+[x] Mouse buttons
+[x] Gamepad support
+[x] Controller vibration
+[x] Input mapping system
 [ ] UI framework(s)
 
 

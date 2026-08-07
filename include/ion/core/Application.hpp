@@ -14,10 +14,14 @@ public:
     virtual void render();
     virtual void shutdown();
 
+    // Requests the engine loop to stop after the current frame.
+    void quit();
+
     void run();
 
 protected:
     WindowConfig windowConfig_;
+    bool quitRequested_ = false;
 };
 
 } // namespace ion

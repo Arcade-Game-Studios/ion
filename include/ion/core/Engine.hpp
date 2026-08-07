@@ -8,7 +8,8 @@ namespace ion {
 
 class Engine {
 public:
-    using FrameCallback = std::function<void(float deltaTime)>;
+    // Return false from the callback to stop the engine loop.
+    using FrameCallback = std::function<bool(float deltaTime)>;
 
     Engine();
     explicit Engine(const WindowConfig& config);
