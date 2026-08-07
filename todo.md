@@ -10,14 +10,13 @@ s
 PHASE 0 - FOUNDATION
 ==================================================
 
-[ ] Create CMake build system
-[ ] Setup project versioning
-[ ] Add MIT license
-[ ] Create public API headers
-[ ] Setup CI builds for macOS, Windows, Linux
-[ ] Create documentation structure
-[ ] Setup GitHub repository
-[ ] Add window Icon and window Title
+[x] Create CMake build system
+[x] Setup project versioning
+[x] Create public API headers
+[x] Setup CI builds for macOS, Windows, Linux
+[x] Create documentation structure
+[x] Setup GitHub repository
+[x] Add window Icon and window Title
 
 
 ==================================================

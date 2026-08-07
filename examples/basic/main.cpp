@@ -33,6 +33,8 @@ public:
     void run() {
         ion::WindowConfig config;
         config.title = "Ion Example";
+        config.appName = "Ion";
+        config.iconPath = "assets/ion_default_window_icon.png";
         config.width = 960;
         config.height = 540;
 

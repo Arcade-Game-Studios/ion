@@ -6,6 +6,10 @@
 
 namespace ion {
 
+struct Matrix4;
+
+inline Matrix4 operator*(const Matrix4& a, const Matrix4& b);
+
 struct Matrix4 {
     float m[16];
 

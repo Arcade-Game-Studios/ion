@@ -5,6 +5,11 @@
 
 class TestApp : public ion::Application {
 public:
+    TestApp() {
+        windowConfig_.title = "Ion Engine";
+        windowConfig_.appName = "Ion";
+    }
+
     void initialize() override {
         std::printf("Ion Engine v%s window test\n", ion::VERSION_STRING);
     }

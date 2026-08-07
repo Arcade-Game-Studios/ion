@@ -6,6 +6,8 @@
 
 #include <Cocoa/Cocoa.h>
 
+#include "DefaultIcon.hpp"
+
 namespace ion {
 
 struct Window::Impl {
@@ -15,6 +17,43 @@ struct Window::Impl {
     WindowConfig config;
     bool open = false;
 };
+
+namespace {
+
+constexpr CGFloat DOCK_ICON_MARGIN_RATIO = 0.10f;
+
+NSString* findPlatformIconPath() {
+    NSString* dir = @"assets/icons/macos";
+    NSArray* files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir
+                                                                        error:nil];
+    for (NSString* file in files) {
+        if ([file hasSuffix:@".png"] || [file hasSuffix:@".icns"]) {
+            return [dir stringByAppendingPathComponent:file];
+        }
+    }
+    return nil;
+}
+
+NSImage* makeDockIcon(NSImage* source) {
+    NSSize size = [source size];
+    if (size.width < 32.0 || size.height < 32.0) {
+        return source;
+    }
+
+    CGFloat margin = size.width * DOCK_ICON_MARGIN_RATIO;
+    NSImage* icon = [[NSImage alloc] initWithSize:size];
+    [icon lockFocus];
+    [source drawInRect:NSMakeRect(margin, margin,
+                                  size.width - margin * 2.0,
+                                  size.height - margin * 2.0)
+              fromRect:NSZeroRect
+             operation:NSCompositingOperationSourceOver
+              fraction:1.0];
+    [icon unlockFocus];
+    return icon;
+}
+
+} // namespace
 
 Window::Window() : impl(new Impl) {
 }
@@ -54,6 +93,12 @@ bool Window::create() {
         NSApplication* app = [NSApplication sharedApplication];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
 
+        NSString* processName =
+            [NSString stringWithUTF8String:impl->config.appName.c_str()];
+        if (processName.length > 0) {
+            [[NSProcessInfo processInfo] setProcessName:processName];
+        }
+
         NSString* appName = [[NSProcessInfo processInfo] processName];
         NSMenu* mainMenu = [[NSMenu alloc] init];
         NSMenuItem* appMenuItem = [[NSMenuItem alloc] init];
@@ -81,6 +126,31 @@ bool Window::create() {
                                                            defer:NO];
         [window setTitle:[NSString stringWithUTF8String:impl->config.title.c_str()]];
         [window setReleasedWhenClosed:NO];
+
+        NSString* iconPath = nil;
+        if (!impl->config.iconPath.empty()) {
+            iconPath =
+                [NSString stringWithUTF8String:impl->config.iconPath.c_str()];
+        } else {
+            iconPath = findPlatformIconPath();
+        }
+
+        if (iconPath) {
+            NSImage* icon = [[NSImage alloc] initWithContentsOfFile:iconPath];
+            if (icon) {
+                [app setApplicationIconImage:makeDockIcon(icon)];
+                [window setRepresentedURL:[NSURL fileURLWithPath:iconPath]];
+            }
+        } else {
+            NSData* data =
+                [NSData dataWithBytes:DEFAULT_WINDOW_ICON_DATA
+                               length:DEFAULT_WINDOW_ICON_SIZE];
+            NSImage* icon = [[NSImage alloc] initWithData:data];
+            if (icon) {
+                [app setApplicationIconImage:makeDockIcon(icon)];
+            }
+        }
+
         [window center];
         [window makeKeyAndOrderFront:nil];
 

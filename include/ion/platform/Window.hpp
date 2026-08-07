@@ -7,6 +7,8 @@ namespace ion {
 
 struct WindowConfig {
     std::string title = "Ion Engine";
+    std::string appName = "Ion Engine";
+    std::string iconPath = "";
     uint32_t width = 1280;
     uint32_t height = 720;
     bool resizable = true;

@@ -15,7 +15,7 @@ void Application::render() {}
 void Application::shutdown() {}
 
 void Application::run() {
-    Window window;
+    Window window(windowConfig_);
     if (!window.create()) {
         return;
     }
