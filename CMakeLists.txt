@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(ion VERSION 0.1.0 LANGUAGES CXX)
+project(ion VERSION 0.1.1 LANGUAGES CXX)
 
 if(APPLE)
     enable_language(OBJCXX)
@@ -15,11 +15,13 @@ option(ION_BUILD_TESTS "Build tests" ON)
 
 add_library(ion_core STATIC
     core/Application.cpp
+    core/Camera.cpp
     core/Config.cpp
     core/Engine.cpp
     core/Input.cpp
     core/Log.cpp
     core/Memory.cpp
+    core/Render.cpp
 )
 target_include_directories(ion_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(ion_core PUBLIC
@@ -34,18 +36,25 @@ if(APPLE)
         platform/macos/WindowImpl.mm
         platform/macos/Paths.mm
         platform/macos/InputImpl.mm
+        platform/macos/RenderMetal.mm
+        platform/macos/RenderGL.mm
     )
     set_source_files_properties(
         platform/macos/WindowImpl.mm
         platform/macos/Paths.mm
         platform/macos/InputImpl.mm
+        platform/macos/RenderMetal.mm
+        platform/macos/RenderGL.mm
         PROPERTIES LANGUAGE OBJCXX)
     target_include_directories(ion_platform_macos PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
     set_target_properties(ion_platform_macos PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(ion_platform_macos INTERFACE
         "-framework Cocoa"
         "-framework GameController"
-        "-framework CoreHaptics")
+        "-framework CoreHaptics"
+        "-framework Metal"
+        "-framework QuartzCore"
+        "-framework OpenGL")
 elseif(WIN32)
     add_library(ion_platform_windows OBJECT
         platform/windows/WindowImpl.cpp
@@ -99,4 +108,15 @@ if(ION_BUILD_TESTS)
     add_executable(input_test tests/input_test.cpp)
     target_link_libraries(input_test PRIVATE ion_core)
     add_test(NAME input_test COMMAND input_test)
+
+    add_executable(render_test tests/render_test.cpp)
+    target_link_libraries(render_test PRIVATE ion_core)
+    if(APPLE)
+        target_link_libraries(render_test PRIVATE ion_platform_macos "-framework Cocoa")
+    elseif(WIN32)
+        target_link_libraries(render_test PRIVATE ion_platform_windows)
+    elseif(UNIX)
+        target_link_libraries(render_test PRIVATE ion_platform_linux)
+    endif()
+    add_test(NAME render_test COMMAND render_test)
 endif()

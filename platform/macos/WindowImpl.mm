@@ -460,7 +460,7 @@ uint32_t Window::height() const {
 }
 
 void* Window::nativeHandle() {
-    return (void*)CFBridgingRetain(impl->window);
+    return (__bridge void*)[impl->window contentView];
 }
 
 void Window::setFullscreen(bool fullscreen) {

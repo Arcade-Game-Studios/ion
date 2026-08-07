@@ -59,23 +59,22 @@ PHASE 3 - INPUT SYSTEM
 [x] Gamepad support
 [x] Controller vibration
 [x] Input mapping system
-[ ] UI framework(s)
 
 
 ==================================================
 PHASE 4 - RENDERER FOUNDATION
 ==================================================
 
-[ ] Renderer abstraction layer
-[ ] GPU detection
-[ ] OpenGL backend
-[ ] Metal backend
-[ ] Vulkan backend
-[ ] Render commands
-[ ] Shader system
-[ ] Texture system
-[ ] Vertex buffers
-[ ] Index buffers
+[x] Renderer abstraction layer
+[x] GPU detection
+[x] OpenGL backend
+[x] Metal backend
+[ ] Vulkan backend (deferred)
+[x] Render commands
+[x] Shader system
+[x] Texture system
+[x] Vertex buffers
+[x] Index buffers
 
 
 ==================================================

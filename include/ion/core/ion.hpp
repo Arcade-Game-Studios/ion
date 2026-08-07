@@ -27,6 +27,10 @@
 #include <ion/render/Color.hpp>
 #include <ion/render/Texture.hpp>
 #include <ion/render/Camera.hpp>
+#include <ion/render/Shader.hpp>
+#include <ion/render/Buffer.hpp>
+#include <ion/render/Vertex.hpp>
+#include <ion/render/RenderCommand.hpp>
 
 // Math
 #include <ion/math/Vector2.hpp>

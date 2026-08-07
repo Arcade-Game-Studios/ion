@@ -7,6 +7,9 @@ if(APPLE)
 
     add_executable(input_example input/main.cpp)
     target_link_libraries(input_example PRIVATE ion_core ion_platform_macos "-framework Cocoa")
+
+    add_executable(render_example render/main.cpp)
+    target_link_libraries(render_example PRIVATE ion_core ion_platform_macos "-framework Cocoa")
 elseif(WIN32)
     add_executable(basic_example basic/main.cpp)
     target_link_libraries(basic_example PRIVATE ion_core ion_platform_windows)
