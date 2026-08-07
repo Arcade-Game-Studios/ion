@@ -15,12 +15,17 @@ option(ION_BUILD_TESTS "Build tests" ON)
 
 add_library(ion_core STATIC
     core/Application.cpp
+    core/Config.cpp
+    core/Engine.cpp
+    core/Log.cpp
+    core/Memory.cpp
 )
 target_include_directories(ion_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(ion_core PUBLIC
     ION_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     ION_VERSION_MINOR=${PROJECT_VERSION_MINOR}
     ION_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+    ION_MEMORY_TRACKING
 )
 
 if(APPLE)
@@ -74,4 +79,8 @@ if(ION_BUILD_TESTS)
     elseif(UNIX)
         target_link_libraries(window_test PRIVATE ion_platform_linux)
     endif()
+
+    add_executable(core_test tests/core_test.cpp)
+    target_link_libraries(core_test PRIVATE ion_core)
+    add_test(NAME core_test COMMAND core_test)
 endif()

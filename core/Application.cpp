@@ -1,8 +1,6 @@
 #include <ion/core/Application.hpp>
 
-#include <ion/platform/Window.hpp>
-
-#include <chrono>
+#include <ion/core/Engine.hpp>
 
 namespace ion {
 
@@ -15,27 +13,19 @@ void Application::render() {}
 void Application::shutdown() {}
 
 void Application::run() {
-    Window window(windowConfig_);
-    if (!window.create()) {
+    Engine engine(windowConfig_);
+    engine.setFrameCallback([this](float deltaTime) {
+        update(deltaTime);
+        render();
+    });
+
+    if (!engine.initialize()) {
         return;
     }
 
     initialize();
-
-    auto last = std::chrono::steady_clock::now();
-    while (window.isOpen()) {
-        window.pollEvents();
-
-        auto now = std::chrono::steady_clock::now();
-        float deltaTime = std::chrono::duration<float>(now - last).count();
-        last = now;
-
-        update(deltaTime);
-        render();
-    }
-
+    engine.run();
     shutdown();
-    window.destroy();
 }
 
 } // namespace ion

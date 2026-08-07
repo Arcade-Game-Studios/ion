@@ -9,7 +9,12 @@
 
 // Core
 #include <ion/core/Application.hpp>
+#include <ion/core/Config.hpp>
 #include <ion/core/Engine.hpp>
+#include <ion/core/Error.hpp>
+#include <ion/core/Log.hpp>
+#include <ion/core/Memory.hpp>
+#include <ion/core/Timer.hpp>
 #include <ion/core/Version.hpp>
 
 // Platform
