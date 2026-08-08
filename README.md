@@ -29,6 +29,7 @@ Examples build to `build/examples/basic_example`.
 
 ## Documentation
 
+- [Wiki](wiki/Home.md)
 - [Documentation](docs/README.md)
 - [Roadmap](todo.md)
 
