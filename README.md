@@ -1,10 +1,14 @@
-<img src="ion-logo.png" alt="Ion logo" width="300">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/iondark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/ion-logo.png">
+  <img src="images/ion-logo.png" alt="Ion Engine" width="300">
+</picture>
 
 # Ion Engine
 
 Ion Engine is a modern, open-source game engine written in C++ with native support for Windows, macOS, and Linux.
 
-[![License](https://img.shields.io/badge/license-Arcade_Studios-6E56CF?style=for-the-badge)](LICENSE.md) ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C?style=for-the-badge&logo=cplusplus&logoColor=white) ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-222222?style=for-the-badge) ![Status](https://img.shields.io/badge/status-in_development-F5A623?style=for-the-badge)
+[![License](https://img.shields.io/badge/license-Arcade_Studios-6E56CF?style=for-the-badge)](LICENSE) ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C?style=for-the-badge&logo=cplusplus&logoColor=white) ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-222222?style=for-the-badge) ![Status](https://img.shields.io/badge/status-in_development-F5A623?style=for-the-badge)
 
 ## Features
 - Native C++20 architecture
@@ -15,13 +19,22 @@ Ion Engine is a modern, open-source game engine written in C++ with native suppo
 
 ## Supported Platforms
 
-![Supported operating systems](images/Operating%20Systems.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/Operating%20Systems%20Dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/Operating%20Systems.png">
+  <img src="images/Operating%20Systems.png" alt="Supported operating systems">
+</picture>
 
 ## Rendering Backends
 
-![Metal](images/Metal.png) ![OpenGL](images/OpenGL%20logo.png) ![Vulkan](images/Vulkan%20logo.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/Metal%20Dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/Metal%20Light.png">
+  <img src="images/Metal%20Light.png" alt="Metal">
+</picture>
+![OpenGL](images/OpenGL%20logo.png) ![Vulkan](images/Vulkan%20logo.png)
 
-- **Metal** — macOSs
+- **Metal** — macOS
 - **OpenGL** — Windows, macOS, Linux
 - **Vulkan** — planned (see [roadmap](todo.md))
 
