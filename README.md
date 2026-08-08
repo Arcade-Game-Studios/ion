@@ -1,13 +1,10 @@
-![Ion logo](ion-logo.png)
+<img src="ion-logo.png" alt="Ion logo" width="300">
 
 # Ion Engine
 
 Ion Engine is a modern, open-source game engine written in C++ with native support for Windows, macOS, and Linux.
 
-[![License](https://img.shields.io/badge/license-Arcade_Studios-6E56CF?style=for-the-badge)](LICENSE.md)
-![Language](https://img.shields.io/badge/language-C%2B%2B-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-222222?style=for-the-badge)
-![Status](https://img.shields.io/badge/status-in_development-F5A623?style=for-the-badge)
+[![License](https://img.shields.io/badge/license-Arcade_Studios-6E56CF?style=for-the-badge)](LICENSE.md) ![Language](https://img.shields.io/badge/language-C%2B%2B-00599C?style=for-the-badge&logo=cplusplus&logoColor=white) ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-222222?style=for-the-badge) ![Status](https://img.shields.io/badge/status-in_development-F5A623?style=for-the-badge)
 
 ## Features
 - Native C++20 architecture
@@ -24,7 +21,7 @@ Ion Engine is a modern, open-source game engine written in C++ with native suppo
 
 ![Metal](images/Metal.png) ![OpenGL](images/OpenGL%20logo.png) ![Vulkan](images/Vulkan%20logo.png)
 
-- **Metal** — macOS
+- **Metal** — macOSs
 - **OpenGL** — Windows, macOS, Linux
 - **Vulkan** — planned (see [roadmap](todo.md))
 
