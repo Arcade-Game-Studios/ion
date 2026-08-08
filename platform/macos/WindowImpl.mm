@@ -10,6 +10,36 @@
 
 #include "DefaultIcon.hpp"
 
+// Content view that swallows key events instead of letting the responder
+// chain NSBeep on unhandled keys. Ion reads raw key events directly from the
+// event queue in pollEvents(), so nothing here needs to reach a responder.
+// Command-modified equivalents (e.g. Cmd+Q) still pass through to the menu.
+@interface IonGameView : NSView
+@end
+
+@implementation IonGameView
+
+- (BOOL)acceptsFirstResponder {
+    return YES;
+}
+
+- (void)keyDown:(NSEvent*)event {
+    (void)event;
+}
+
+- (void)keyUp:(NSEvent*)event {
+    (void)event;
+}
+
+- (BOOL)performKeyEquivalent:(NSEvent*)event {
+    if (event.modifierFlags & NSEventModifierFlagCommand) {
+        return [super performKeyEquivalent:event];
+    }
+    return YES;
+}
+
+@end
+
 namespace ion {
 
 struct Window::Impl {
@@ -257,6 +287,7 @@ bool Window::create() {
         [window setTitle:[NSString stringWithUTF8String:impl->config.title.c_str()]];
         [window setReleasedWhenClosed:NO];
         [window setAcceptsMouseMovedEvents:YES];
+        [window setContentView:[[IonGameView alloc] initWithFrame:contentRect]];
 
         NSString* iconPath = nil;
         if (!impl->config.iconPath.empty()) {
