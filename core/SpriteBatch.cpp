@@ -396,9 +396,6 @@ void SpriteBatch::flush_() {
     IndexBuffer ib =
         renderer_->createIndexBuffer((uint32_t)indices_.size(), false,
                                      indices_.data());
-    fprintf(stderr, "[DBG] flush_ verts=%zu idx=%zu vb=%llu ib=%llu\n",
-            vertices_.size(), indices_.size(), (unsigned long long)vb.id,
-            (unsigned long long)ib.id);
     thisFrameBuffers_.emplace_back(vb, ib);
     renderer_->setVertexBuffer(vb);
     renderer_->setIndexBuffer(ib);

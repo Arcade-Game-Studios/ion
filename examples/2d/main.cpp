@@ -378,12 +378,26 @@ private:
 
         // World pass.
         batch_.begin(worldCamera_);
-        batch_.drawRect(ion::Vector2(100.0f, 100.0f), ion::Vector2(100.0f, 100.0f),
-                        ion::Color::red());
-        batch_.drawSprite(heroFrames_[0], ion::Vector2(300.0f, 300.0f),
-                          ion::Vector2(64, 64), 0.0f, ion::Vector2(32, 32),
-                          ion::Color::white());
         tilemap_.draw(batch_, worldCamera_);
+
+        // Primitives drawn in world space (relative to the player so they
+        // stay in view as the camera follows).
+        batch_.drawRect(ion::Vector2(player_.x + 140.0f, player_.y - 90.0f),
+                        ion::Vector2(60.0f, 60.0f), ion::Color::red());
+        batch_.drawCircle(ion::Vector2(player_.x - 140.0f, player_.y + 60.0f),
+                          30.0f, ion::Color::cyan());
+        batch_.drawLine(ion::Vector2(player_.x - 100.0f, player_.y - 90.0f),
+                        ion::Vector2(player_.x + 100.0f, player_.y - 90.0f),
+                        4.0f, ion::Color::yellow());
+
+        // Star sprite from the atlas.
+        batch_.drawSprite(*atlas_.find("star"),
+                          player_ + ion::Vector2(-90.0f, 90.0f),
+                          ion::Vector2(48.0f, 48.0f), 0.0f,
+                          ion::Vector2(24.0f, 24.0f), ion::Color::white());
+
+        drawHero_(batch_);
+        emitter_.draw(batch_);
         batch_.end();
 
         // UI pass (screen-space text).

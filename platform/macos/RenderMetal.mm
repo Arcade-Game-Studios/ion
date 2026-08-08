@@ -529,8 +529,6 @@ private:
             break;
         }
         case RenderCommandType::SetTexture: {
-            fprintf(stderr, "[DBG] SetTexture slot=%d id=%llu\n",
-                    command.textureSlot, command.textureId);
             auto it = textureData_.find(command.textureId);
             if (it == textureData_.end()) {
                 break;
@@ -544,7 +542,6 @@ private:
             break;
         }
         case RenderCommandType::BindVertexBuffer: {
-            fprintf(stderr, "[DBG] BindVB id=%llu\n", command.vertexBufferId);
             auto it = vertexBuffers_.find(command.vertexBufferId);
             if (it == vertexBuffers_.end()) {
                 break;
@@ -598,9 +595,6 @@ private:
             break;
         }
         case RenderCommandType::DrawIndexed: {
-            fprintf(stderr, "[DBG] DrawIndexed vb=%llu ib=%llu count=%u start=%u tex=%llu\n",
-                    command.vertexBufferId, command.indexBufferId, command.count,
-                    command.startIndex, command.textureId);
             if (!uniformBlob_.empty()) {
                 [encoder setVertexBytes:uniformBlob_.data()
                                  length:uniformBlob_.size()
