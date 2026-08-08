@@ -38,6 +38,18 @@ struct GPUInfo {
 };
 
 //
+// Per-frame renderer statistics. Reset at beginFrame() and accumulated as
+// commands are recorded during the frame; stats() returns the values
+// accumulated so far in the current frame.
+//
+struct RendererStats {
+    uint32_t drawCalls = 0;     // Draw/DrawIndexed commands recorded
+    uint32_t triangles = 0;     // triangles issued by draw commands
+    uint32_t vertices = 0;      // vertices / indexed vertices issued
+    uint32_t commandCount = 0;  // total render commands recorded
+};
+
+//
 // Renderer is the renderer abstraction layer. It records a per-frame list of
 // render commands which are executed by the active backend (Metal or OpenGL
 // on macOS; other platforms can use the Null backend for testing).
@@ -99,6 +111,9 @@ public:
     void drawIndexed(uint32_t indexCount, uint32_t startIndex = 0);
 
     const GPUInfo& gpuInfo() const;
+
+    // Statistics for the current frame (reset each beginFrame).
+    const RendererStats& stats() const;
 
     // Number of commands recorded since the last beginFrame (testing/debug).
     size_t recordedCommandCount() const;

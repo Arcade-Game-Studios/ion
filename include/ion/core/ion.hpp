@@ -35,6 +35,7 @@
 // 2D Rendering
 #include <ion/render/Camera2D.hpp>
 #include <ion/render/ParticleSystem.hpp>
+#include <ion/render/PerformanceOverlay.hpp>
 #include <ion/render/SpriteAnimation.hpp>
 #include <ion/render/SpriteBatch.hpp>
 #include <ion/render/SpriteRegion.hpp>

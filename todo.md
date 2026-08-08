@@ -75,6 +75,7 @@ PHASE 4 - RENDERER FOUNDATION
 [x] Texture system
 [x] Vertex buffers
 [x] Index buffers
+[x] Performance overlay
 
 
 ==================================================
@@ -149,15 +150,15 @@ PHASE 9 - TERMINAL RENDERER
 PHASE 10 - DEBUG AND DEVELOPMENT TOOLS
 ==================================================
 
-[ ] Ion Debug Overlay
-[ ] FPS counter
-[ ] Frame time display
+[x] Ion Debug Overlay
+[x] FPS counter
+[x] Frame time display
 [ ] CPU usage monitor
 [ ] GPU usage monitor
 [ ] VRAM usage monitor
 [ ] Memory usage tracker
-[ ] Draw call counter
-[ ] Triangle counter
+[x] Draw call counter
+[x] Triangle counter
 [ ] Entity counter
 [ ] Renderer statistics
 [ ] Performance profiler

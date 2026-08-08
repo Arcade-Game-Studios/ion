@@ -105,6 +105,7 @@ public:
 
     void beginFrame() {
         commands.clear();
+        frameStats = {};
         if (!backend || !initialized) {
             return;
         }
@@ -126,11 +127,19 @@ public:
 
     void record(const RenderCommand& command) {
         commands.push_back(command);
+        frameStats.commandCount++;
+        if (command.type == RenderCommandType::Draw ||
+            command.type == RenderCommandType::DrawIndexed) {
+            frameStats.drawCalls++;
+            frameStats.vertices += command.count;
+            frameStats.triangles += command.count / 3;
+        }
     }
 
     Window* window = nullptr;
     RenderBackend* backend = nullptr;
     GPUInfo gpuInfo;
+    RendererStats frameStats;
     std::vector<RenderCommand> commands;
     bool initialized = false;
 };
@@ -385,6 +394,11 @@ void Renderer::drawIndexed(uint32_t indexCount, uint32_t startIndex) {
 const GPUInfo& Renderer::gpuInfo() const {
     static const GPUInfo empty;
     return impl_ ? impl_->gpuInfo : empty;
+}
+
+const RendererStats& Renderer::stats() const {
+    static const RendererStats empty;
+    return impl_ ? impl_->frameStats : empty;
 }
 
 size_t Renderer::recordedCommandCount() const {

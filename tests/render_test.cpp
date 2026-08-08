@@ -45,6 +45,12 @@ static void testNullBackend() {
     renderer.drawIndexed(6, 0);
     CHECK(renderer.recordedCommandCount() == 3);
 
+    const ion::RendererStats& stats = renderer.stats();
+    CHECK(stats.commandCount == 3);
+    CHECK(stats.drawCalls == 2);
+    CHECK(stats.vertices == 3 + 6);
+    CHECK(stats.triangles == 3 / 3 + 6 / 3);
+
     const ion::RenderCommand* commands = renderer.recordedCommands();
     CHECK(commands[0].type == ion::RenderCommandType::Clear);
     CHECK(commands[0].clearColor.b == 1.0f);
@@ -133,6 +139,28 @@ static void testCommandRecording() {
     renderer.shutdown();
 }
 
+static void testStatsResetEachFrame() {
+    ion::Renderer renderer;
+    ion::RendererConfig config;
+    config.backend = ion::RendererBackend::Null;
+    CHECK(renderer.initialize(nullptr, config));
+
+    renderer.beginFrame();
+    renderer.draw(6);
+    CHECK(renderer.stats().drawCalls == 1);
+    CHECK(renderer.stats().triangles == 2);
+    renderer.endFrame();
+
+    // New frame resets the counters.
+    renderer.beginFrame();
+    CHECK(renderer.stats().commandCount == 0);
+    CHECK(renderer.stats().drawCalls == 0);
+    CHECK(renderer.stats().triangles == 0);
+    CHECK(renderer.stats().vertices == 0);
+    renderer.endFrame();
+    renderer.shutdown();
+}
+
 static void testVertexFormat() {
     CHECK(sizeof(ion::Vertex) == 36);
     ion::Vertex vertex = {{1.0f, 2.0f, 3.0f}, {0.5f, 0.5f, 0.5f, 1.0f},
@@ -188,6 +216,7 @@ static void testCameraPerspective() {
 int main() {
     testNullBackend();
     testCommandRecording();
+    testStatsResetEachFrame();
     testVertexFormat();
     testCameraOrthographic();
     testCameraPerspective();

@@ -23,6 +23,7 @@ add_library(ion_core STATIC
     core/Log.cpp
     core/Memory.cpp
     core/ParticleSystem.cpp
+    core/PerformanceOverlay.cpp
     core/Render.cpp
     core/SpriteAnimation.cpp
     core/SpriteBatch.cpp
