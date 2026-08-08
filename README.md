@@ -9,6 +9,18 @@ Ion Engine is a modern, open-source game engine written in C++ with native suppo
 - Editor included
 - CMake build system
 
+## Supported Platforms
+
+![Supported operating systems](images/Operating%20Systems.png)
+
+## Rendering Backends
+
+![Metal](images/Metal.png) ![OpenGL](images/OpenGL%20logo.png) ![Vulkan](images/Vulkan%20logo.png)
+
+- **Metal** — macOS
+- **OpenGL** — Windows, macOS, Linux
+- **Vulkan** — planned (see [roadmap](todo.md))
+
 ## Build
 
 Requires CMake 3.16+ and a C++20 compiler.
