@@ -83,6 +83,8 @@ public:
     IndexBuffer createIndexBuffer(uint32_t count, bool is16Bit,
                                   const void* data);
     void destroyIndexBuffer(IndexBuffer& buffer);
+    void updateIndexBuffer(const IndexBuffer& buffer, uint32_t offsetBytes,
+                           uint32_t sizeBytes, const void* data);
     void setIndexBuffer(const IndexBuffer& buffer);
 
     // Uniforms (name must match a uniform declared by the active shader)

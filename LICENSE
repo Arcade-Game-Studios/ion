@@ -1,0 +1,83 @@
+# Ion Engine License
+
+Copyright © 2026 Arcade Studios.
+
+## 1. Permission
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of the Ion Engine source code and associated documentation (the “Software”),
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, subject to the conditions below.
+
+The Software may be used for both commercial and non-commercial purposes,
+including but not limited to:
+
+* Creating and publishing games
+* Creating applications and interactive software
+* Creating modifications and derivative works
+* Incorporating Ion Engine into proprietary or open-source projects
+* Distributing compiled or modified versions of the Software
+
+You are not required to release the source code of your own project solely
+because it uses Ion Engine.
+
+## 2. Copyright Notice
+
+The copyright notice and this license must be included in all copies or
+substantial portions of the Ion Engine source code.
+
+You may modify the copyright notice of your own modifications, but you must
+not remove or alter existing copyright notices belonging to Arcade Studios.
+
+3. Ion Engine Name and Branding
+
+This license does not grant permission to use the name “Ion Engine”, the
+“Ion” name, the Ion Engine logo, or other Arcade Studios trademarks or
+branding in a manner that falsely suggests that a modified or derivative
+version is an official release of Arcade Studios.
+
+You may state that your project is “powered by Ion Engine” or that it is
+“based on Ion Engine”, provided that the statement does not imply official
+endorsement or affiliation.
+
+## 4. Contributions
+
+By submitting code, documentation, or other material to the Ion Engine
+project, you represent that you have the right to submit that material under
+the project’s applicable license.
+
+Unless otherwise stated by the project, contributions are licensed under the
+same terms as the Ion Engine Software.
+
+## 5. Third-Party Software
+
+Ion Engine may contain or depend upon software distributed under separate
+licenses.
+
+Those components remain subject to their respective licenses. Nothing in
+this license supersedes or replaces the license of third-party software.
+
+Users and distributors are responsible for complying with applicable
+third-party license requirements.
+
+## 6. No Warranty
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT.
+
+IN NO EVENT SHALL ARCADE STUDIOS OR ITS CONTRIBUTORS BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## 7. License
+
+This license applies to Ion Engine unless a particular file or component
+contains a separate license notice.
+
+⸻
+
+Copyright © 2026 Arcade Studios.
+
+Ion Engine is an open-source project developed by Arcade Studios.

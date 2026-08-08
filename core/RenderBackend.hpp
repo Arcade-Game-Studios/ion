@@ -41,6 +41,8 @@ public:
     virtual uint64_t createIndexBuffer(uint32_t count, bool is16Bit,
                                        const void* data) = 0;
     virtual void destroyIndexBuffer(uint64_t id) = 0;
+    virtual void updateIndexBuffer(uint64_t id, uint32_t offsetBytes,
+                                   uint32_t sizeBytes, const void* data) = 0;
 };
 
 } // namespace ion

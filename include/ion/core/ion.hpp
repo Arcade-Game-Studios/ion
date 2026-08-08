@@ -32,6 +32,16 @@
 #include <ion/render/Vertex.hpp>
 #include <ion/render/RenderCommand.hpp>
 
+// 2D Rendering
+#include <ion/render/Camera2D.hpp>
+#include <ion/render/ParticleSystem.hpp>
+#include <ion/render/SpriteAnimation.hpp>
+#include <ion/render/SpriteBatch.hpp>
+#include <ion/render/SpriteRegion.hpp>
+#include <ion/render/Text.hpp>
+#include <ion/render/TextureAtlas.hpp>
+#include <ion/render/Tilemap.hpp>
+
 // Math
 #include <ion/math/Vector2.hpp>
 #include <ion/math/Vector3.hpp>

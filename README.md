@@ -34,4 +34,4 @@ Examples build to `build/examples/basic_example`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+See [LICENSE](LICENSE).

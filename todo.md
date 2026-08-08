@@ -81,14 +81,14 @@ PHASE 4 - RENDERER FOUNDATION
 PHASE 5 - 2D RENDERING
 ==================================================
 
-[ ] Sprite rendering
-[ ] Sprite batching
-[ ] Texture atlases
-[ ] Sprite animation
-[ ] 2D camera
-[ ] Tilemap support
-[ ] Particle system
-[ ] Text rendering
+[x] Sprite rendering
+[x] Sprite batching
+[x] Texture atlases
+[x] Sprite animation
+[x] 2D camera
+[x] Tilemap support
+[x] Particle system
+[x] Text rendering
 [ ] SVG rendering
 
 

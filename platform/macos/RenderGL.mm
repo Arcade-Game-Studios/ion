@@ -101,6 +101,8 @@ public:
             glEnableVertexAttribArray(0);
             glEnableVertexAttribArray(1);
             glEnableVertexAttribArray(2);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             if (config_.antialiasSamples > 1) {
                 glEnable(GL_MULTISAMPLE);
             }
@@ -346,6 +348,19 @@ public:
             indexBuffers_.erase(it);
         }
         indexBufferIs16Bit_.erase(id);
+    }
+
+    void updateIndexBuffer(uint64_t id, uint32_t offsetBytes,
+                           uint32_t sizeBytes, const void* data) override {
+        @autoreleasepool {
+            auto it = indexBuffers_.find(id);
+            if (it != indexBuffers_.end()) {
+                [context_ makeCurrentContext];
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, it->second);
+                glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, offsetBytes, sizeBytes,
+                                data);
+            }
+        }
     }
 
 private:

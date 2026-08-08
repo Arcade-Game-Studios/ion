@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(ion VERSION 0.1.1 LANGUAGES CXX)
+project(ion VERSION 0.2.0 LANGUAGES CXX)
 
 if(APPLE)
     enable_language(OBJCXX)
@@ -16,12 +16,19 @@ option(ION_BUILD_TESTS "Build tests" ON)
 add_library(ion_core STATIC
     core/Application.cpp
     core/Camera.cpp
+    core/Camera2D.cpp
     core/Config.cpp
     core/Engine.cpp
     core/Input.cpp
     core/Log.cpp
     core/Memory.cpp
+    core/ParticleSystem.cpp
     core/Render.cpp
+    core/SpriteAnimation.cpp
+    core/SpriteBatch.cpp
+    core/TextureAtlas.cpp
+    core/Text.cpp
+    core/Tilemap.cpp
 )
 target_include_directories(ion_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_definitions(ion_core PUBLIC
@@ -119,4 +126,15 @@ if(ION_BUILD_TESTS)
         target_link_libraries(render_test PRIVATE ion_platform_linux)
     endif()
     add_test(NAME render_test COMMAND render_test)
+
+    add_executable(2d_test tests/2d_test.cpp)
+    target_link_libraries(2d_test PRIVATE ion_core)
+    if(APPLE)
+        target_link_libraries(2d_test PRIVATE ion_platform_macos "-framework Cocoa")
+    elseif(WIN32)
+        target_link_libraries(2d_test PRIVATE ion_platform_windows)
+    elseif(UNIX)
+        target_link_libraries(2d_test PRIVATE ion_platform_linux)
+    endif()
+    add_test(NAME 2d_test COMMAND 2d_test)
 endif()

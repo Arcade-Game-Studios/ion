@@ -299,6 +299,15 @@ public:
             pd.fragmentFunction = fragmentFn;
             pd.vertexDescriptor = vd;
             pd.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+            pd.colorAttachments[0].blendingEnabled = YES;
+            pd.colorAttachments[0].sourceRGBBlendFactor =
+                MTLBlendFactorSourceAlpha;
+            pd.colorAttachments[0].destinationRGBBlendFactor =
+                MTLBlendFactorOneMinusSourceAlpha;
+            pd.colorAttachments[0].sourceAlphaBlendFactor =
+                MTLBlendFactorSourceAlpha;
+            pd.colorAttachments[0].destinationAlphaBlendFactor =
+                MTLBlendFactorOneMinusSourceAlpha;
             if (config_.antialiasSamples > 1) {
                 pd.sampleCount = config_.antialiasSamples;
             }
@@ -429,6 +438,17 @@ public:
         indexBufferData_.erase(id);
     }
 
+    void updateIndexBuffer(uint64_t id, uint32_t offsetBytes,
+                           uint32_t sizeBytes, const void* data) override {
+        @autoreleasepool {
+            auto it = indexBufferData_.find(id);
+            if (it != indexBufferData_.end()) {
+                memcpy((uint8_t*)it->second.buffer.contents + offsetBytes,
+                       data, sizeBytes);
+            }
+        }
+    }
+
 private:
     struct TextureData {
         id<MTLTexture> texture = nil;
@@ -509,6 +529,8 @@ private:
             break;
         }
         case RenderCommandType::SetTexture: {
+            fprintf(stderr, "[DBG] SetTexture slot=%d id=%llu\n",
+                    command.textureSlot, command.textureId);
             auto it = textureData_.find(command.textureId);
             if (it == textureData_.end()) {
                 break;
@@ -522,6 +544,7 @@ private:
             break;
         }
         case RenderCommandType::BindVertexBuffer: {
+            fprintf(stderr, "[DBG] BindVB id=%llu\n", command.vertexBufferId);
             auto it = vertexBuffers_.find(command.vertexBufferId);
             if (it == vertexBuffers_.end()) {
                 break;
@@ -575,6 +598,9 @@ private:
             break;
         }
         case RenderCommandType::DrawIndexed: {
+            fprintf(stderr, "[DBG] DrawIndexed vb=%llu ib=%llu count=%u start=%u tex=%llu\n",
+                    command.vertexBufferId, command.indexBufferId, command.count,
+                    command.startIndex, command.textureId);
             if (!uniformBlob_.empty()) {
                 [encoder setVertexBytes:uniformBlob_.data()
                                  length:uniformBlob_.size()

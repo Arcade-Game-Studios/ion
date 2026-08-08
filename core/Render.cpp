@@ -307,6 +307,15 @@ void Renderer::destroyIndexBuffer(IndexBuffer& buffer) {
     buffer.id = 0;
 }
 
+void Renderer::updateIndexBuffer(const IndexBuffer& buffer,
+                                 uint32_t offsetBytes, uint32_t sizeBytes,
+                                 const void* data) {
+    if (!impl_ || !impl_->backend || !buffer.isValid()) {
+        return;
+    }
+    impl_->backend->updateIndexBuffer(buffer.id, offsetBytes, sizeBytes, data);
+}
+
 void Renderer::setIndexBuffer(const IndexBuffer& buffer) {
     if (!impl_ || !buffer.isValid()) {
         return;
@@ -440,6 +449,9 @@ public:
     }
 
     void destroyIndexBuffer(uint64_t) override {}
+
+    void updateIndexBuffer(uint64_t, uint32_t, uint32_t, const void*) override {
+    }
 };
 
 } // namespace

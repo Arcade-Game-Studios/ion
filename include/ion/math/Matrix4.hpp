@@ -42,6 +42,17 @@ struct Matrix4 {
         return mat;
     }
 
+    static Matrix4 rotationZ(float angle) {
+        Matrix4 mat = identity();
+        float c = std::cos(angle);
+        float s = std::sin(angle);
+        mat.m[0] = c;
+        mat.m[4] = -s;
+        mat.m[1] = s;
+        mat.m[5] = c;
+        return mat;
+    }
+
     static Matrix4 orthographic(float left, float right,
                                 float bottom, float top,
                                 float near, float far) {
