@@ -32,6 +32,7 @@ Ion Engine is a modern, open-source game engine written in C++ with native suppo
   <source media="(prefers-color-scheme: light)" srcset="images/Metal%20Light.png">
   <img src="images/Metal%20Light.png" alt="Metal">
 </picture>
+
 ![OpenGL](images/OpenGL%20logo.png) ![Vulkan](images/Vulkan%20logo.png)
 
 - **Metal** — macOS
