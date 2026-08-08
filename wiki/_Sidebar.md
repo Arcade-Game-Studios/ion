@@ -1,6 +1,6 @@
 ## Ion Engine Wiki
 
-- [[Home]]
+- [[README]]
 - [[Getting Started]]
 - [[Examples]]
 - [[Core]]
