@@ -1,3 +1,5 @@
+![Ion logo](ion-logo.png)
+
 # Ion Engine
 
 Ion Engine is a modern, open-source game engine written in C++ with native support for Windows, macOS, and Linux.
