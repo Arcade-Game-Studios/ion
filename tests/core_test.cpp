@@ -5,6 +5,7 @@
 #include <ion/core/Timer.hpp>
 #include <ion/math/Matrix4.hpp>
 #include <ion/math/Vector3.hpp>
+#include <ion/render/Svg.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -139,6 +140,137 @@ static void testLog() {
     ion::setLogLevel(old);
 }
 
+static uint8_t pixelR(const std::vector<uint8_t>& p, uint32_t w, uint32_t x,
+                      uint32_t y) {
+    return p[((size_t)y * w + x) * 4 + 0];
+}
+
+static uint8_t pixelA(const std::vector<uint8_t>& p, uint32_t w, uint32_t x,
+                      uint32_t y) {
+    return p[((size_t)y * w + x) * 4 + 3];
+}
+
+static void testSvgFillRect() {
+    ion::SvgImage image;
+    CHECK(image.parse(
+        "<svg width=\"32\" height=\"32\">"
+        "<rect x=\"8\" y=\"8\" width=\"16\" height=\"16\" fill=\"#ff0000\"/>"
+        "</svg>"));
+    CHECK(image.isValid());
+    CHECK(image.width() == 32);
+    CHECK(image.height() == 32);
+
+    std::vector<uint8_t> px = image.rasterize();
+    CHECK(px.size() == (size_t)32 * 32 * 4);
+    // Inside the rect: opaque red.
+    CHECK(pixelR(px, 32, 16, 16) == 255);
+    CHECK(pixelA(px, 32, 16, 16) == 255);
+    CHECK(px[((size_t)16 * 32 + 16) * 4 + 1] == 0);
+    CHECK(px[((size_t)16 * 32 + 16) * 4 + 2] == 0);
+    // Outside the rect: transparent.
+    CHECK(pixelA(px, 32, 2, 2) == 0);
+    CHECK(pixelA(px, 32, 30, 30) == 0);
+}
+
+static void testSvgCircleStroke() {
+    ion::SvgImage image;
+    CHECK(image.parse(
+        "<svg width=\"40\" height=\"40\">"
+        "<circle cx=\"20\" cy=\"20\" r=\"10\" fill=\"none\" "
+        "stroke=\"#00ff00\" stroke-width=\"4\"/>"
+        "</svg>"));
+    std::vector<uint8_t> px = image.rasterize();
+    // Center is hollow (no fill).
+    CHECK(pixelA(px, 40, 20, 20) == 0);
+    // Stroke band is present (circle r=10 centered at (20,20), width 4
+    // spans radius 8..12, so (20,10) is inside the band).
+    CHECK(pixelA(px, 40, 20, 10) == 255);
+    CHECK(pixelR(px, 40, 20, 10) == 0);
+    CHECK(pixelA(px, 40, 20, 3) == 0);
+}
+
+static void testSvgPathAndDefaults() {
+    // A triangle with no paint attributes defaults to black fill; the second
+    // path is offset by a group transform.
+    ion::SvgImage image;
+    CHECK(image.parse(
+        "<svg width=\"48\" height=\"24\">"
+        "<path d=\"M4 20 L14 4 L24 20 Z\"/>"
+        "<g transform=\"translate(24 0)\">"
+        "<path d=\"M4 20 L14 4 L24 20 Z\" fill=\"blue\"/>"
+        "</g>"
+        "</svg>"));
+    std::vector<uint8_t> px = image.rasterize();
+    CHECK(pixelA(px, 48, 10, 14) > 200);
+    CHECK(pixelR(px, 48, 10, 14) == 0); // default black fill
+    CHECK(pixelA(px, 48, 34, 14) > 200);
+    CHECK(px[((size_t)14 * 48 + 34) * 4 + 2] == 255); // blue
+}
+
+static void testSvgBezierAndArc() {
+    ion::SvgImage image;
+    CHECK(image.parse(
+        "<svg width=\"64\" height=\"64\">"
+        "<path d=\"M8 32 C 8 8 56 8 56 32\" "
+        "fill=\"none\" stroke=\"magenta\" stroke-width=\"2\"/>"
+        "<path d=\"M 4 58 A 24 24 0 0 1 52 58\" fill=\"none\" "
+        "stroke=\"cyan\" stroke-width=\"2\"/>"
+        "</svg>"));
+    std::vector<uint8_t> px = image.rasterize();
+    // Cubic midpoint (t=0.5) is at (32, 14).
+    CHECK(pixelA(px, 64, 32, 14) > 150);
+    // The arc from (4,58) to (52,58) bulges up through (28, 34): center is
+    // (28,58) with radius 24.
+    CHECK(pixelA(px, 64, 28, 34) > 150);
+}
+
+static void testSvgMalformed() {
+    ion::SvgImage image;
+    CHECK(!image.parse("<svg width=\"8\"><rect"));
+    CHECK(!image.parse(""));
+    CHECK(!image.parse("<g></g>"));
+    ion::SvgImage empty;
+    CHECK(!empty.isValid());
+    CHECK(empty.rasterize().empty());
+}
+
+static void testSvgRasterizeHelper() {
+    uint32_t w = 0, h = 0;
+    std::vector<uint8_t> px = ion::rasterizeSvg(
+        "<svg width=\"16\" height=\"16\">"
+        "<circle cx=\"8\" cy=\"8\" r=\"6\" fill=\"#336699\"/>"
+        "</svg>",
+        w, h);
+    CHECK(w == 16);
+    CHECK(h == 16);
+    CHECK(px.size() == (size_t)16 * 16 * 4);
+    CHECK(pixelA(px, 16, 8, 8) > 200);
+    CHECK(px[((size_t)8 * 16 + 8) * 4 + 0] == 0x33);
+    CHECK(px[((size_t)8 * 16 + 8) * 4 + 1] == 0x66);
+    CHECK(px[((size_t)8 * 16 + 8) * 4 + 2] == 0x99);
+}
+
+static void testSvgFile() {
+    const char* path = "/tmp/ion_svg_test.svg";
+    FILE* f = std::fopen(path, "wb");
+    CHECK(f != nullptr);
+    if (f) {
+        std::fputs("<svg width=\"8\" height=\"8\">"
+                   "<rect width=\"8\" height=\"8\" fill=\"green\"/>"
+                   "</svg>",
+                   f);
+        std::fclose(f);
+    }
+    ion::SvgImage image;
+    CHECK(image.parseFile(path));
+    CHECK(image.width() == 8);
+    std::vector<uint8_t> px = image.rasterize();
+    CHECK(pixelA(px, 8, 4, 4) == 255);
+    std::remove(path);
+    ion::SvgImage missing;
+    CHECK(!missing.parseFile("/tmp/ion_svg_does_not_exist.svg"));
+}
+
 int main() {
     testTimer();
     testConfig();
@@ -146,6 +278,13 @@ int main() {
     testMemory();
     testMath();
     testLog();
+    testSvgFillRect();
+    testSvgCircleStroke();
+    testSvgPathAndDefaults();
+    testSvgBezierAndArc();
+    testSvgMalformed();
+    testSvgRasterizeHelper();
+    testSvgFile();
 
     if (failures == 0) {
         std::printf("All core tests passed\n");

@@ -27,6 +27,7 @@ add_library(ion_core STATIC
     core/Render.cpp
     core/SpriteAnimation.cpp
     core/SpriteBatch.cpp
+    core/Svg.cpp
     core/TextureAtlas.cpp
     core/Text.cpp
     core/Tilemap.cpp
@@ -111,6 +112,13 @@ if(ION_BUILD_TESTS)
 
     add_executable(core_test tests/core_test.cpp)
     target_link_libraries(core_test PRIVATE ion_core)
+    if(APPLE)
+        target_link_libraries(core_test PRIVATE ion_platform_macos "-framework Cocoa")
+    elseif(WIN32)
+        target_link_libraries(core_test PRIVATE ion_platform_windows)
+    elseif(UNIX)
+        target_link_libraries(core_test PRIVATE ion_platform_linux)
+    endif()
     add_test(NAME core_test COMMAND core_test)
 
     add_executable(input_test tests/input_test.cpp)

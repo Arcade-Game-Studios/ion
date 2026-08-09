@@ -39,6 +39,7 @@
 #include <ion/render/SpriteAnimation.hpp>
 #include <ion/render/SpriteBatch.hpp>
 #include <ion/render/SpriteRegion.hpp>
+#include <ion/render/Svg.hpp>
 #include <ion/render/Text.hpp>
 #include <ion/render/TextureAtlas.hpp>
 #include <ion/render/Tilemap.hpp>

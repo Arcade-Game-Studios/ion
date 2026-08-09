@@ -90,7 +90,7 @@ PHASE 5 - 2D RENDERING
 [x] Tilemap support
 [x] Particle system
 [x] Text rendering
-[ ] SVG rendering
+[x] SVG rendering
 
 
 ==================================================

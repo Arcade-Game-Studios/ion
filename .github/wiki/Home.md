@@ -28,5 +28,5 @@ Current version: **0.2.0 "Two Dimensional"**
 ## Status
 
 - Phases 0–4 complete (foundation, core, window/platform, input, renderer)
-- Phase 5 (2D rendering) implemented except SVG rendering
+- Phase 5 (2D rendering) complete
 - Phases 6–12 planned (3D rendering, ECS, audio, terminal renderer, tools, assets, release)
