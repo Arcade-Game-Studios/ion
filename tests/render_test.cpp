@@ -162,12 +162,13 @@ static void testStatsResetEachFrame() {
 }
 
 static void testVertexFormat() {
-    CHECK(sizeof(ion::Vertex) == 36);
+    CHECK(sizeof(ion::Vertex) == 48);
     ion::Vertex vertex = {{1.0f, 2.0f, 3.0f}, {0.5f, 0.5f, 0.5f, 1.0f},
-                          {0.25f, 0.75f}};
+                          {0.25f, 0.75f}, {0.0f, 1.0f, 0.0f}};
     CHECK(vertex.position.x == 1.0f);
     CHECK(vertex.color.w == 1.0f);
     CHECK(vertex.uv.y == 0.75f);
+    CHECK(vertex.normal.y == 1.0f);
 }
 
 static void testCameraOrthographic() {

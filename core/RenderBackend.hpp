@@ -7,10 +7,17 @@
 //
 
 #include <ion/render/RenderCommand.hpp>
+#include <ion/render/RenderTarget.hpp>
 #include <ion/render/Renderer.hpp>
 #include <ion/render/Texture.hpp>
 
 namespace ion {
+
+struct RenderTargetCreateInfo {
+    uint64_t targetId = 0;
+    uint64_t colorTextureId = 0;  // 0 for depth-only targets
+    uint64_t depthTextureId = 0;  // 0 when the target has no depth buffer
+};
 
 class RenderBackend {
 public:
@@ -31,6 +38,13 @@ public:
     virtual uint64_t createTexture(const TextureDesc& desc,
                                    const void* pixels) = 0;
     virtual void destroyTexture(uint64_t id) = 0;
+
+    virtual uint64_t createCubemap(const TextureDesc& desc,
+                                   const void* const faces[6]) = 0;
+
+    virtual RenderTargetCreateInfo createRenderTarget(
+        const RenderTargetDesc& desc) = 0;
+    virtual void destroyRenderTarget(uint64_t id) = 0;
 
     virtual uint64_t createVertexBuffer(uint32_t sizeBytes,
                                         const void* data) = 0;

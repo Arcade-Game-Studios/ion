@@ -96,12 +96,34 @@ renderer.setIndexBuffer(ib);
 renderer.drawIndexed(6);
 ```
 
-`ion::Vertex` is `{Vector3 position; Vector4 color; Vector2 uv}` (stride 36
-bytes; position at 0, color at 12, uv at 28). Buffers can be updated in place
-with `updateVertexBuffer` / `updateIndexBuffer` and must be destroyed with
-`destroyVertexBuffer` / `destroyIndexBuffer`.
+`ion::Vertex` is `{Vector3 position; Vector4 color; Vector2 uv; Vector3
+normal}` (stride 48 bytes; position at 0, color at 12, uv at 28, normal at
+40). The normal feeds per-vertex lighting in the 3D examples. Buffers can be
+updated in place with `updateVertexBuffer` / `updateIndexBuffer` and must be
+destroyed with `destroyVertexBuffer` / `destroyIndexBuffer`.
 
 Draw without indices with `renderer.draw(vertexCount)`.
+
+## Images
+
+Decode image files into RGBA8 pixels for use with `createTexture`:
+
+```cpp
+uint32_t w, h;
+std::vector<uint8_t> rgba;
+if (ion::loadImage("assets/checker.png", w, h, rgba)) {
+    ion::TextureDesc desc;
+    desc.width = w;
+    desc.height = h;
+    desc.format = ion::TextureFormat::RGBA8;
+    desc.filterLinear = true;
+    ion::Texture tex = renderer.createTexture(desc, rgba.data());
+}
+```
+
+`loadImage` (and the in-memory `loadImageFromMemory`) decode PNG files:
+8-bit gray, RGB, palette, gray+alpha, and RGBA, including `tRNS` transparency
+chunks. Unsupported formats and corrupt data return `false`.
 
 ## Camera
 
@@ -161,6 +183,51 @@ renderer.endFrame();
 command list. See `include/ion/render/RenderCommand.hpp` for the command types
 (`Clear`, `UseShader`, `SetTexture`, `BindVertexBuffer`, `BindIndexBuffer`,
 `SetUniform*`, `Draw`, `DrawIndexed`).
+
+## Meshes, materials, models
+
+`ion::Mesh` wraps a vertex buffer and an optional index buffer. Build one from
+a CPU vertex array (32-bit indices are packed down to 16-bit when possible):
+
+```cpp
+ion::Mesh mesh = ion::createMesh(renderer, vertices, vertexCount,
+                                 indices, indexCount);
+renderer.useShader(shader);
+renderer.setUniform("uMVP", camera.viewProjection() * modelMatrix);
+renderer.setVertexBuffer(mesh.vertexBuffer);
+renderer.setIndexBuffer(mesh.indexBuffer);
+renderer.drawIndexed(mesh.indexCount);
+// ...
+ion::destroyMesh(renderer, mesh);
+```
+
+`ion::Material` describes a surface: `name`, `baseColor` (multiplied by the
+optional `texture`, or the final color when no texture is set), and `metallic`
+/ `roughness` (informational until the lighting system lands).
+
+Models are loaded by extension from disk:
+
+```cpp
+ion::Model model;
+if (ion::loadModel(renderer, "assets/cube.glb", model)) {
+    for (const ion::ModelPart& part : model.parts) {
+        // part.mesh, part.material, part.transform (node transform from
+        // the source file, if any)
+    }
+    // ...draw each part with part.mesh...
+    model.destroy(renderer); // frees meshes + textures
+}
+```
+
+Supported formats:
+- `.obj` (Wavefront) with an optional `.mtl` sidecar: `Kd` color, `d`/`Tr`
+  opacity, `map_Kd` texture. Geometry is split into one part per material.
+- `.gltf` / `.glb` (glTF 2.0) for static meshes: accessors, primitives,
+  `pbrMetallicRoughness` materials (`baseColorFactor` + `baseColorTexture`),
+  and node transforms. Skinning, morph targets, animations, and
+  camera/light nodes are ignored.
+
+See `examples/model` for a scene that loads all three formats side by side.
 
 ## 2D rendering
 

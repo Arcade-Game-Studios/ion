@@ -26,11 +26,18 @@
 #include <ion/render/Renderer.hpp>
 #include <ion/render/Color.hpp>
 #include <ion/render/Texture.hpp>
+#include <ion/render/Image.hpp>
 #include <ion/render/Camera.hpp>
 #include <ion/render/Shader.hpp>
 #include <ion/render/Buffer.hpp>
 #include <ion/render/Vertex.hpp>
+#include <ion/render/Mesh.hpp>
+#include <ion/render/Material.hpp>
+#include <ion/render/Model.hpp>
 #include <ion/render/RenderCommand.hpp>
+#include <ion/render/RenderTarget.hpp>
+#include <ion/render/Light.hpp>
+#include <ion/render/Skybox.hpp>
 
 // 2D Rendering
 #include <ion/render/Camera2D.hpp>

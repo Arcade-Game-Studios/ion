@@ -4,7 +4,6 @@ Project: Ion Engine
 Language: C++
 Targets: macOS, Windows, Linux
 Type: Open-source game framework
-s
 
 ==================================================
 PHASE 0 - FOUNDATION
@@ -99,16 +98,18 @@ PHASE 6 - 3D RENDERING
 
 [x] 3D camera
 [x] Depth testing (basic 3D render pipeline + 3d example)
-[ ] Mesh rendering
-[ ] Model loading
-[ ] OBJ support
-[ ] glTF support
-[ ] Materials
+[x] Mesh rendering
+[x] Model loading
+[x] OBJ support
+[x] glTF support
+[x] Materials
 [ ] Lighting system
 [ ] Shadows
 [ ] Physically based rendering
 [ ] Skyboxes
 [ ] Post-processing effects
+[ ] Collision system
+[ ] Gravity system
 
 
 ==================================================

@@ -6,6 +6,7 @@
 #include "RenderBackend.hpp"
 
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 
 namespace ion {
@@ -259,6 +260,85 @@ void Renderer::setTexture(int slot, const Texture& texture) {
     impl_->record(command);
 }
 
+Texture Renderer::createCubemap(const TextureDesc& desc,
+                                const void* const faces[6]) {
+    if (!impl_ || !impl_->backend) {
+        return {};
+    }
+    Texture texture;
+    texture.desc = desc;
+    texture.id = impl_->backend->createCubemap(desc, faces);
+    return texture;
+}
+
+RenderTarget Renderer::createRenderTarget(const RenderTargetDesc& desc) {
+    RenderTarget target;
+    if (!impl_ || !impl_->backend) {
+        return target;
+    }
+    target.desc = desc;
+    RenderTargetCreateInfo info = impl_->backend->createRenderTarget(desc);
+    if (info.targetId == 0) {
+        return target;  // backend failed
+    }
+    target.id = info.targetId;
+    if (desc.format != TextureFormat::Depth) {
+        target.color.id = info.colorTextureId;
+        target.color.desc.width = desc.width;
+        target.color.desc.height = desc.height;
+        target.color.desc.format = desc.format;
+        target.color.desc.filterLinear = true;
+    }
+    if (desc.withDepth) {
+        target.depth.id = info.depthTextureId;
+        target.depth.desc.width = desc.width;
+        target.depth.desc.height = desc.height;
+        target.depth.desc.format = TextureFormat::Depth;
+        target.depth.desc.filterLinear = true;
+    }
+    return target;
+}
+
+void Renderer::destroyRenderTarget(RenderTarget& target) {
+    if (!impl_ || !impl_->backend || !target.isValid()) {
+        return;
+    }
+    impl_->backend->destroyRenderTarget(target.id);
+    target.id = 0;
+    target.color.id = 0;
+    target.depth.id = 0;
+}
+
+void Renderer::setRenderTarget(const RenderTarget& target) {
+    if (!impl_ || !target.isValid()) {
+        return;
+    }
+    RenderCommand command;
+    command.type = RenderCommandType::SetRenderTarget;
+    command.targetId = target.id;
+    impl_->record(command);
+}
+
+void Renderer::setDefaultRenderTarget() {
+    if (!impl_) {
+        return;
+    }
+    RenderCommand command;
+    command.type = RenderCommandType::SetRenderTarget;
+    command.targetId = 0;
+    impl_->record(command);
+}
+
+void Renderer::setDepthWrite(bool enabled) {
+    if (!impl_) {
+        return;
+    }
+    RenderCommand command;
+    command.type = RenderCommandType::SetDepthWrite;
+    command.count = enabled ? 1 : 0;
+    impl_->record(command);
+}
+
 VertexBuffer Renderer::createVertexBuffer(uint32_t sizeBytes, const void* data) {
     if (!impl_ || !impl_->backend) {
         return {};
@@ -376,6 +456,22 @@ void Renderer::setUniform(const char* name, const Matrix4& value) {
     impl_->record(command);
 }
 
+void Renderer::setUniform(const char* name, const float* values,
+                          uint32_t vec4Count) {
+    if (vec4Count > 8) {
+        vec4Count = 8;
+    }
+    RenderCommand command;
+    command.type = RenderCommandType::SetUniformVec4Array;
+    command.uniformName = name;
+    command.uniformCount = vec4Count;
+    if (vec4Count > 0) {
+        std::memcpy(command.uniformArrayData, values,
+                    vec4Count * sizeof(float) * 4);
+    }
+    impl_->record(command);
+}
+
 void Renderer::draw(uint32_t vertexCount) {
     RenderCommand command;
     command.type = RenderCommandType::Draw;
@@ -448,6 +544,25 @@ public:
     }
 
     void destroyTexture(uint64_t) override {}
+
+    uint64_t createCubemap(const TextureDesc&, const void* const[6]) override {
+        return 1;
+    }
+
+    RenderTargetCreateInfo createRenderTarget(
+        const RenderTargetDesc& desc) override {
+        RenderTargetCreateInfo info;
+        info.targetId = 1;
+        if (desc.format != TextureFormat::Depth) {
+            info.colorTextureId = 2;
+        }
+        if (desc.withDepth) {
+            info.depthTextureId = 3;
+        }
+        return info;
+    }
+
+    void destroyRenderTarget(uint64_t) override {}
 
     uint64_t createVertexBuffer(uint32_t, const void*) override {
         return 1;

@@ -25,6 +25,7 @@ namespace {
 struct TextureData {
     GLuint texture = 0;
     bool filterLinear = true;
+    bool isCubemap = false;
 };
 
 GLenum glFormat(TextureFormat format) {
@@ -101,6 +102,7 @@ public:
             glEnableVertexAttribArray(0);
             glEnableVertexAttribArray(1);
             glEnableVertexAttribArray(2);
+            glEnableVertexAttribArray(3);
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glEnable(GL_DEPTH_TEST);
@@ -123,6 +125,11 @@ public:
                 glDeleteTextures(1, &entry.second.texture);
             }
             textures_.clear();
+            for (auto& entry : renderTargets_) {
+                GLuint fbo = entry.second.fbo;
+                glDeleteFramebuffers(1, &fbo);
+            }
+            renderTargets_.clear();
             for (auto& entry : vertexBuffers_) {
                 GLuint buffer = entry.second;
                 glDeleteBuffers(1, &buffer);
@@ -181,6 +188,9 @@ public:
             NSRect backing = [view_ convertRectToBacking:view_.bounds];
             viewportWidth_ = (GLsizei)backing.size.width;
             viewportHeight_ = (GLsizei)backing.size.height;
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            currentTarget_ = 0;
+            glDepthMask(GL_TRUE);
             glViewport(0, 0, viewportWidth_, viewportHeight_);
         }
     }
@@ -289,6 +299,169 @@ public:
         }
     }
 
+    uint64_t createCubemap(const TextureDesc& desc,
+                           const void* const faces[6]) override {
+        @autoreleasepool {
+            [context_ makeCurrentContext];
+            GLuint texture = 0;
+            glGenTextures(1, &texture);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
+            static const GLenum kFaceTargets[6] = {
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X,
+                GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
+                GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
+                GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
+                GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
+                GL_TEXTURE_CUBE_MAP_NEGATIVE_Z};
+            GLenum dataType = desc.format == TextureFormat::RGBA8
+                                  ? GL_UNSIGNED_BYTE
+                                  : GL_HALF_FLOAT;
+            if (faces) {
+                for (int i = 0; i < 6; ++i) {
+                    if (!faces[i]) {
+                        break;
+                    }
+                    glTexImage2D(kFaceTargets[i], 0, glFormat(desc.format),
+                                 (GLsizei)desc.width, (GLsizei)desc.height, 0,
+                                 GL_RGBA, dataType, faces[i]);
+                }
+            }
+            GLenum filter = desc.filterLinear ? GL_LINEAR : GL_NEAREST;
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER,
+                            desc.generateMipmaps ? GL_LINEAR_MIPMAP_LINEAR
+                                                 : filter);
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, filter);
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S,
+                            GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T,
+                            GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R,
+                            GL_CLAMP_TO_EDGE);
+            if (desc.generateMipmaps) {
+                glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+            }
+
+            uint64_t id = nextId_++;
+            textures_[id] = {texture, desc.filterLinear, true};
+            return id;
+        }
+    }
+
+    RenderTargetCreateInfo createRenderTarget(
+        const RenderTargetDesc& desc) override {
+        @autoreleasepool {
+            [context_ makeCurrentContext];
+            RenderTargetCreateInfo info;
+            if (desc.width == 0 || desc.height == 0) {
+                return info;
+            }
+            if (desc.format != TextureFormat::Depth) {
+                GLuint tex = 0;
+                glGenTextures(1, &tex);
+                glBindTexture(GL_TEXTURE_2D, tex);
+                glTexImage2D(GL_TEXTURE_2D, 0, glFormat(desc.format),
+                             (GLsizei)desc.width, (GLsizei)desc.height, 0,
+                             GL_RGBA,
+                             desc.format == TextureFormat::RGBA8
+                                 ? GL_UNSIGNED_BYTE
+                                 : GL_HALF_FLOAT,
+                             nullptr);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                                GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                                GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                                GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
+                                GL_CLAMP_TO_EDGE);
+                info.colorTextureId = nextId_++;
+                textures_[info.colorTextureId] = {tex, true, false};
+            }
+            if (desc.withDepth) {
+                GLuint tex = 0;
+                glGenTextures(1, &tex);
+                glBindTexture(GL_TEXTURE_2D, tex);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F,
+                             (GLsizei)desc.width, (GLsizei)desc.height, 0,
+                             GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                                GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                                GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                                GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
+                                GL_CLAMP_TO_EDGE);
+                info.depthTextureId = nextId_++;
+                textures_[info.depthTextureId] = {tex, false, false};
+            }
+
+            GLuint fbo = 0;
+            glGenFramebuffers(1, &fbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            if (info.colorTextureId) {
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                       GL_TEXTURE_2D,
+                                       textures_[info.colorTextureId].texture,
+                                       0);
+            }
+            if (info.depthTextureId) {
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                       GL_TEXTURE_2D,
+                                       textures_[info.depthTextureId].texture,
+                                       0);
+            }
+            GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+            if (status != GL_FRAMEBUFFER_COMPLETE) {
+                ION_LOG_ERROR("OpenGL: framebuffer incomplete: 0x%x", status);
+                glDeleteFramebuffers(1, &fbo);
+                if (info.colorTextureId) {
+                    destroyTexture(info.colorTextureId);
+                }
+                if (info.depthTextureId) {
+                    destroyTexture(info.depthTextureId);
+                }
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                return info;
+            }
+            if (info.colorTextureId == 0) {
+                glDrawBuffer(GL_NONE);
+                glReadBuffer(GL_NONE);
+            }
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+            RenderTargetData rt;
+            rt.desc = desc;
+            rt.fbo = fbo;
+            rt.colorTextureId = info.colorTextureId;
+            rt.depthTextureId = info.depthTextureId;
+            uint64_t targetId = nextId_++;
+            renderTargets_[targetId] = rt;
+            info.targetId = targetId;
+            return info;
+        }
+    }
+
+    void destroyRenderTarget(uint64_t id) override {
+        auto it = renderTargets_.find(id);
+        if (it == renderTargets_.end()) {
+            return;
+        }
+        if (currentTarget_ == id) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            currentTarget_ = 0;
+        }
+        GLuint fbo = it->second.fbo;
+        glDeleteFramebuffers(1, &fbo);
+        if (it->second.colorTextureId) {
+            destroyTexture(it->second.colorTextureId);
+        }
+        if (it->second.depthTextureId) {
+            destroyTexture(it->second.depthTextureId);
+        }
+        renderTargets_.erase(it);
+    }
+
     uint64_t createVertexBuffer(uint32_t sizeBytes,
                                 const void* data) override {
         @autoreleasepool {
@@ -366,6 +539,13 @@ public:
     }
 
 private:
+    struct RenderTargetData {
+        GLuint fbo = 0;
+        uint64_t colorTextureId = 0;
+        uint64_t depthTextureId = 0;
+        RenderTargetDesc desc;
+    };
+
     GLuint compileShader_(GLenum type, const char* source) {
         GLuint shader = glCreateShader(type);
         glShaderSource(shader, 1, &source, nullptr);
@@ -406,9 +586,31 @@ private:
                 break;
             }
             glActiveTexture(GL_TEXTURE0 + command.textureSlot);
-            glBindTexture(GL_TEXTURE_2D, it->second.texture);
+            glBindTexture(it->second.isCubemap ? GL_TEXTURE_CUBE_MAP
+                                               : GL_TEXTURE_2D,
+                          it->second.texture);
             break;
         }
+        case RenderCommandType::SetRenderTarget: {
+            if (command.targetId == 0) {
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                currentTarget_ = 0;
+                glViewport(0, 0, viewportWidth_, viewportHeight_);
+                break;
+            }
+            auto it = renderTargets_.find(command.targetId);
+            if (it == renderTargets_.end()) {
+                break;
+            }
+            glBindFramebuffer(GL_FRAMEBUFFER, it->second.fbo);
+            currentTarget_ = command.targetId;
+            glViewport(0, 0, (GLsizei)it->second.desc.width,
+                       (GLsizei)it->second.desc.height);
+            break;
+        }
+        case RenderCommandType::SetDepthWrite:
+            glDepthMask(command.count ? GL_TRUE : GL_FALSE);
+            break;
         case RenderCommandType::BindVertexBuffer: {
             auto it = vertexBuffers_.find(command.vertexBufferId);
             if (it == vertexBuffers_.end()) {
@@ -416,12 +618,14 @@ private:
             }
             glBindVertexArray(vao_);
             glBindBuffer(GL_ARRAY_BUFFER, it->second);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 36,
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 48,
                                   (const void*)0);
-            glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 36,
+            glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 48,
                                   (const void*)12);
-            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 36,
+            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 48,
                                   (const void*)28);
+            glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 48,
+                                  (const void*)40);
             break;
         }
         case RenderCommandType::BindIndexBuffer: {
@@ -470,6 +674,19 @@ private:
             }
             break;
         }
+        case RenderCommandType::SetUniformVec4Array: {
+            if (!activeProgram_) {
+                break;
+            }
+            GLint location =
+                uniformLocation_(activeProgram_, command.uniformName.c_str());
+            if (location < 0) {
+                break;
+            }
+            glUniform4fv(location, (GLsizei)command.uniformCount,
+                         command.uniformArrayData);
+            break;
+        }
         case RenderCommandType::Draw:
             glBindVertexArray(vao_);
             glDrawArrays(GL_TRIANGLES, 0, (GLsizei)command.count);
@@ -511,10 +728,12 @@ private:
                        std::unordered_map<std::string, GLint>>
         uniformLocations_;
     std::unordered_map<uint64_t, TextureData> textures_;
+    std::unordered_map<uint64_t, RenderTargetData> renderTargets_;
     std::unordered_map<uint64_t, GLuint> vertexBuffers_;
     std::unordered_map<uint64_t, GLuint> indexBuffers_;
     std::unordered_map<uint64_t, bool> indexBufferIs16Bit_;
     std::vector<RenderCommand> pendingCommands_;
+    uint64_t currentTarget_ = 0;
     bool indexIs16Bit_ = true;
     bool initialized_ = false;
 };

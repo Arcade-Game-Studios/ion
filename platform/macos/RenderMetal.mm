@@ -24,8 +24,18 @@ struct UniformSlot {
     uint32_t size = 0;
 };
 
+// Color attachment format of the currently bound render target. Selects which
+// pipeline variant a shader uses (a pipeline's color format must match the
+// active render pass's attachment format).
+enum class TargetColorFormat : int {
+    Swapchain,  // BGRA8Unorm (the window's CAMetalLayer)
+    RGBA8,      // RGBA8Unorm
+    RGBA16F,    // RGBA16Float
+    DepthOnly,  // no color attachment (shadow maps)
+};
+
 struct ShaderData {
-    id<MTLRenderPipelineState> pipeline = nil;
+    std::unordered_map<int, id<MTLRenderPipelineState>> pipelines;
     std::unordered_map<std::string, UniformSlot> uniforms;
     uint32_t uniformSize = 0;
 };
@@ -120,6 +130,13 @@ public:
             dsDesc.depthCompareFunction = MTLCompareFunctionLessEqual;
             dsDesc.depthWriteEnabled = YES;
             depthState_ = [device_ newDepthStencilStateWithDescriptor:dsDesc];
+
+            MTLDepthStencilDescriptor* dsNoWriteDesc =
+                [MTLDepthStencilDescriptor new];
+            dsNoWriteDesc.depthCompareFunction = MTLCompareFunctionLessEqual;
+            dsNoWriteDesc.depthWriteEnabled = NO;
+            depthStateNoWrite_ =
+                [device_ newDepthStencilStateWithDescriptor:dsNoWriteDesc];
         }
         initialized_ = true;
         return true;
@@ -133,11 +150,13 @@ public:
         }
         shaders_.clear();
         textureData_.clear();
+        renderTargets_.clear();
         vertexBuffers_.clear();
         indexBufferData_.clear();
         commandQueue_ = nil;
         depthTexture_ = nil;
         depthState_ = nil;
+        depthStateNoWrite_ = nil;
         device_ = nil;
         view_ = nil;
         initialized_ = false;
@@ -225,47 +244,134 @@ public:
 
     void endFrame() override {
         @autoreleasepool {
-            if (!drawable_) {
-                return;
+            if (pendingCommands_.empty() && drawable_) {
+                // Nothing recorded; still present a cleared frame.
+                pendingCommands_.push_back(RenderCommand());
             }
-            for (const RenderCommand& command : pendingCommands_) {
-                if (command.type == RenderCommandType::Clear) {
-                    currentClear_ = command.clearColor;
-                }
+            if (pendingCommands_.empty()) {
+                return;
             }
             id<MTLCommandBuffer> commandBuffer = [commandQueue_ commandBuffer];
             commandBuffer.label = @"Ion Render Frame";
 
-            MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor
-                renderPassDescriptor];
-            pass.colorAttachments[0].loadAction = MTLLoadActionClear;
-            pass.colorAttachments[0].clearColor =
-                MTLClearColorMake(currentClear_.r, currentClear_.g,
-                                  currentClear_.b, currentClear_.a);
-            if (msaaTexture_) {
-                pass.colorAttachments[0].texture = msaaTexture_;
-                pass.colorAttachments[0].resolveTexture = drawable_.texture;
-                pass.colorAttachments[0].storeAction =
-                    MTLStoreActionStoreAndMultisampleResolve;
-            } else {
-                pass.colorAttachments[0].texture = drawable_.texture;
-                pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+            // Split the command list into render passes at SetRenderTarget
+            // boundaries. targetId 0 is the swapchain (window drawable).
+            struct Segment {
+                size_t begin = 0;
+                size_t end = 0;
+                uint64_t targetId = 0;
+                Color clearColor = Color::black();
+            };
+            std::vector<Segment> segments;
+            Color runningClear = currentClear_;
+            uint64_t currentTarget = 0;
+            size_t segmentStart = 0;
+            for (size_t i = 0; i < pendingCommands_.size(); ++i) {
+                const RenderCommand& c = pendingCommands_[i];
+                if (c.type == RenderCommandType::SetRenderTarget) {
+                    segments.push_back(
+                        {segmentStart, i, currentTarget, runningClear});
+                    currentTarget = c.targetId;
+                    segmentStart = i + 1;
+                } else if (c.type == RenderCommandType::Clear) {
+                    runningClear = c.clearColor;
+                }
             }
-            if (depthTexture_) {
-                pass.depthAttachment.texture = depthTexture_;
-                pass.depthAttachment.clearDepth = 1.0;
-                pass.depthAttachment.loadAction = MTLLoadActionClear;
-                pass.depthAttachment.storeAction = MTLStoreActionDontCare;
-            }
+            segments.push_back(
+                {segmentStart, pendingCommands_.size(), currentTarget,
+                 runningClear});
 
-            id<MTLRenderCommandEncoder> encoder =
-                [commandBuffer renderCommandEncoderWithDescriptor:pass];
-            [encoder setDepthStencilState:depthState_];
-            for (const RenderCommand& command : pendingCommands_) {
-                executeCommand_(encoder, command);
+            bool presented = false;
+            for (const Segment& segment : segments) {
+                if (segment.begin >= segment.end) {
+                    continue;
+                }
+                bool isSwapchain = segment.targetId == 0;
+                if (isSwapchain && !drawable_) {
+                    continue;
+                }
+                id<MTLTexture> colorTexture = nil;
+                id<MTLTexture> depthTexture = nil;
+                MTLPixelFormat colorFormat = MTLPixelFormatBGRA8Unorm;
+                bool hasColor = true;
+                bool msaa = false;
+                if (isSwapchain) {
+                    colorTexture = msaaTexture_ ? msaaTexture_
+                                                : drawable_.texture;
+                    depthTexture = depthTexture_;
+                    msaa = msaaTexture_ != nil;
+                } else {
+                    auto it = renderTargets_.find(segment.targetId);
+                    if (it == renderTargets_.end()) {
+                        continue;
+                    }
+                    RenderTargetData& rt = it->second;
+                    if (rt.desc.format == TextureFormat::Depth) {
+                        hasColor = false;
+                        depthTexture = rt.depth;
+                    } else {
+                        colorTexture = rt.color;
+                        colorFormat =
+                            rt.desc.format == TextureFormat::RGBA16F
+                                ? MTLPixelFormatRGBA16Float
+                                : MTLPixelFormatRGBA8Unorm;
+                        depthTexture = rt.depth;
+                    }
+                }
+                currentColorFormat_ = hasColor
+                                         ? (colorFormat ==
+                                                    MTLPixelFormatRGBA16Float
+                                                ? TargetColorFormat::RGBA16F
+                                                : (isSwapchain
+                                                       ? TargetColorFormat::
+                                                             Swapchain
+                                                       : TargetColorFormat::
+                                                             RGBA8))
+                                         : TargetColorFormat::DepthOnly;
+
+                MTLRenderPassDescriptor* pass =
+                    [MTLRenderPassDescriptor renderPassDescriptor];
+                if (hasColor) {
+                    pass.colorAttachments[0].texture = colorTexture;
+                    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+                    pass.colorAttachments[0].clearColor = MTLClearColorMake(
+                        segment.clearColor.r, segment.clearColor.g,
+                        segment.clearColor.b, segment.clearColor.a);
+                    if (msaa) {
+                        pass.colorAttachments[0].resolveTexture =
+                            drawable_.texture;
+                        pass.colorAttachments[0].storeAction =
+                            MTLStoreActionStoreAndMultisampleResolve;
+                    } else {
+                        pass.colorAttachments[0].storeAction =
+                            MTLStoreActionStore;
+                    }
+                }
+                if (depthTexture) {
+                    pass.depthAttachment.texture = depthTexture;
+                    pass.depthAttachment.clearDepth = 1.0;
+                    pass.depthAttachment.loadAction = MTLLoadActionClear;
+                    pass.depthAttachment.storeAction = isSwapchain
+                                                           ? MTLStoreActionDontCare
+                                                           : MTLStoreActionStore;
+                }
+
+                id<MTLRenderCommandEncoder> encoder =
+                    [commandBuffer renderCommandEncoderWithDescriptor:pass];
+                [encoder setDepthStencilState:depthState_];
+                for (size_t i = segment.begin; i < segment.end; ++i) {
+                    executeCommand_(encoder, pendingCommands_[i]);
+                }
+                [encoder endEncoding];
+
+                if (isSwapchain) {
+                    [commandBuffer presentDrawable:drawable_];
+                    presented = true;
+                }
             }
-            [encoder endEncoding];
-            [commandBuffer presentDrawable:drawable_];
+            if (!presented && drawable_) {
+                [commandBuffer presentDrawable:drawable_];
+            }
             [commandBuffer commit];
             drawable_ = nil;
             pendingCommands_.clear();
@@ -328,40 +434,39 @@ public:
             vd.attributes[2].format = MTLVertexFormatFloat2;
             vd.attributes[2].offset = 28;
             vd.attributes[2].bufferIndex = 30;
-            vd.layouts[30].stride = 36;
+            vd.attributes[3].format = MTLVertexFormatFloat3;
+            vd.attributes[3].offset = 40;
+            vd.attributes[3].bufferIndex = 30;
+            vd.layouts[30].stride = 48;
             vd.layouts[30].stepFunction = MTLVertexStepFunctionPerVertex;
 
-            MTLRenderPipelineDescriptor* pd =
-                [MTLRenderPipelineDescriptor new];
-            pd.vertexFunction = vertexFn;
-            pd.fragmentFunction = fragmentFn;
-            pd.vertexDescriptor = vd;
-            pd.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
-            pd.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
-            pd.colorAttachments[0].blendingEnabled = YES;
-            pd.colorAttachments[0].sourceRGBBlendFactor =
-                MTLBlendFactorSourceAlpha;
-            pd.colorAttachments[0].destinationRGBBlendFactor =
-                MTLBlendFactorOneMinusSourceAlpha;
-            pd.colorAttachments[0].sourceAlphaBlendFactor =
-                MTLBlendFactorSourceAlpha;
-            pd.colorAttachments[0].destinationAlphaBlendFactor =
-                MTLBlendFactorOneMinusSourceAlpha;
-            if (config_.antialiasSamples > 1) {
-                pd.sampleCount = config_.antialiasSamples;
+            ShaderData data;
+            NSError* pipelineError = nil;
+            data.pipelines[(int)TargetColorFormat::Swapchain] =
+                buildPipeline_(vertexFn, fragmentFn, vd,
+                               MTLPixelFormatBGRA8Unorm, false, 0,
+                               &pipelineError);
+            data.pipelines[(int)TargetColorFormat::RGBA8] =
+                buildPipeline_(vertexFn, fragmentFn, vd,
+                               MTLPixelFormatRGBA8Unorm, true, 1,
+                               &pipelineError);
+            data.pipelines[(int)TargetColorFormat::RGBA16F] =
+                buildPipeline_(vertexFn, fragmentFn, vd,
+                               MTLPixelFormatRGBA16Float, true, 1,
+                               &pipelineError);
+            data.pipelines[(int)TargetColorFormat::DepthOnly] =
+                buildPipeline_(vertexFn, fragmentFn, vd,
+                               MTLPixelFormatInvalid, true, 1,
+                               &pipelineError);
+            bool anyPipeline = false;
+            for (const auto& entry : data.pipelines) {
+                anyPipeline = anyPipeline || entry.second != nil;
             }
-
-            id<MTLRenderPipelineState> pipeline =
-                [device_ newRenderPipelineStateWithDescriptor:pd
-                                                        error:&error];
-            if (!pipeline) {
+            if (!anyPipeline) {
                 ION_LOG_ERROR("Metal: pipeline state creation failed: %s",
-                              error.localizedDescription.UTF8String);
+                              pipelineError.localizedDescription.UTF8String);
                 return 0;
             }
-
-            ShaderData data;
-            data.pipeline = pipeline;
             reflectUniforms_(vertexFn, data);
 
             uint64_t id = nextId_++;
@@ -421,6 +526,135 @@ public:
 
     void destroyTexture(uint64_t id) override {
         textureData_.erase(id);
+    }
+
+    uint64_t createCubemap(const TextureDesc& desc,
+                           const void* const faces[6]) override {
+        @autoreleasepool {
+            MTLTextureDescriptor* tdesc = [MTLTextureDescriptor
+                textureCubeDescriptorWithPixelFormat:metalPixelFormat(desc.format)
+                                                size:desc.width
+                                           mipmapped:desc.generateMipmaps];
+            tdesc.usage = MTLTextureUsageShaderRead;
+            if (desc.generateMipmaps) {
+                tdesc.usage |= MTLTextureUsageShaderWrite;
+            }
+            id<MTLTexture> texture = [device_ newTextureWithDescriptor:tdesc];
+            if (!texture) {
+                ION_LOG_ERROR("Metal: cubemap allocation failed");
+                return 0;
+            }
+            if (faces) {
+                for (int i = 0; i < 6; ++i) {
+                    if (!faces[i]) {
+                        break;
+                    }
+                    [texture replaceRegion:MTLRegionMake2D(0, 0, desc.width,
+                                                           desc.height)
+                               mipmapLevel:0
+                                     slice:i
+                                 withBytes:faces[i]
+                               bytesPerRow:desc.width * 4
+                             bytesPerImage:desc.width * desc.height * 4];
+                }
+            }
+            if (desc.generateMipmaps) {
+                id<MTLCommandBuffer> blitBuffer = [commandQueue_ commandBuffer];
+                id<MTLBlitCommandEncoder> blit =
+                    [blitBuffer blitCommandEncoder];
+                [blit generateMipmapsForTexture:texture];
+                [blit endEncoding];
+                [blitBuffer commit];
+            }
+
+            uint64_t id = nextId_++;
+            textureData_[id] = {texture, desc};
+            return id;
+        }
+    }
+
+    RenderTargetCreateInfo createRenderTarget(
+        const RenderTargetDesc& desc) override {
+        @autoreleasepool {
+            RenderTargetCreateInfo info;
+            if (desc.width == 0 || desc.height == 0) {
+                return info;
+            }
+            if (desc.format != TextureFormat::Depth) {
+                MTLPixelFormat colorFormat =
+                    desc.format == TextureFormat::RGBA16F
+                        ? MTLPixelFormatRGBA16Float
+                        : MTLPixelFormatRGBA8Unorm;
+                MTLTextureDescriptor* cdesc = [MTLTextureDescriptor
+                    texture2DDescriptorWithPixelFormat:colorFormat
+                                                width:desc.width
+                                               height:desc.height
+                                              mipmapped:NO];
+                cdesc.usage = MTLTextureUsageRenderTarget |
+                              MTLTextureUsageShaderRead;
+                cdesc.storageMode = MTLStorageModePrivate;
+                id<MTLTexture> color = [device_ newTextureWithDescriptor:cdesc];
+                if (!color) {
+                    ION_LOG_ERROR("Metal: render target color allocation failed");
+                    return info;
+                }
+                uint64_t colorId = nextId_++;
+                textureData_[colorId] = {color,
+                                         {desc.width, desc.height, desc.format,
+                                          true, false}};
+                info.colorTextureId = colorId;
+            }
+            if (desc.withDepth) {
+                MTLTextureDescriptor* ddesc = [MTLTextureDescriptor
+                    texture2DDescriptorWithPixelFormat:
+                        MTLPixelFormatDepth32Float
+                                                width:desc.width
+                                               height:desc.height
+                                              mipmapped:NO];
+                ddesc.usage = MTLTextureUsageRenderTarget |
+                              MTLTextureUsageShaderRead;
+                ddesc.storageMode = MTLStorageModePrivate;
+                id<MTLTexture> depth = [device_ newTextureWithDescriptor:ddesc];
+                if (!depth) {
+                    ION_LOG_ERROR("Metal: render target depth allocation failed");
+                    return info;
+                }
+                uint64_t depthId = nextId_++;
+                textureData_[depthId] = {depth,
+                                         {desc.width, desc.height,
+                                          TextureFormat::Depth, false, false}};
+                info.depthTextureId = depthId;
+            }
+
+            RenderTargetData rt;
+            rt.desc = desc;
+            if (info.colorTextureId) {
+                rt.color = textureData_[info.colorTextureId].texture;
+            }
+            if (info.depthTextureId) {
+                rt.depth = textureData_[info.depthTextureId].texture;
+            }
+            uint64_t targetId = nextId_++;
+            renderTargets_[targetId] = rt;
+            info.targetId = targetId;
+            return info;
+        }
+    }
+
+    void destroyRenderTarget(uint64_t id) override {
+        auto it = renderTargets_.find(id);
+        if (it == renderTargets_.end()) {
+            return;
+        }
+        for (auto texIt = textureData_.begin(); texIt != textureData_.end();) {
+            if (texIt->second.texture == it->second.color ||
+                texIt->second.texture == it->second.depth) {
+                texIt = textureData_.erase(texIt);
+            } else {
+                ++texIt;
+            }
+        }
+        renderTargets_.erase(it);
     }
 
     uint64_t createVertexBuffer(uint32_t sizeBytes,
@@ -500,6 +734,12 @@ private:
         bool is16Bit = true;
     };
 
+    struct RenderTargetData {
+        id<MTLTexture> color = nil;
+        id<MTLTexture> depth = nil;
+        RenderTargetDesc desc;
+    };
+
     void reflectUniforms_(id<MTLFunction> function, ShaderData& data) {
         @autoreleasepool {
             MTLAutoreleasedArgument reflectedArg = nil;
@@ -519,6 +759,9 @@ private:
                 if (size == 0) {
                     continue;
                 }
+                if (member.arrayLength > 1) {
+                    size *= (uint32_t)member.arrayLength;
+                }
                 UniformSlot slot;
                 slot.offset = (uint32_t)member.offset;
                 slot.size = size;
@@ -532,6 +775,40 @@ private:
                              "uniforms)",
                              data.uniformSize, data.uniforms.size());
             }
+        }
+    }
+
+    id<MTLRenderPipelineState> buildPipeline_(id<MTLFunction> vertexFn,
+                                              id<MTLFunction> fragmentFn,
+                                              MTLVertexDescriptor* vd,
+                                              MTLPixelFormat colorFormat,
+                                              bool blendingEnabled,
+                                              NSUInteger sampleCount,
+                                              NSError** error) {
+        @autoreleasepool {
+            MTLRenderPipelineDescriptor* pd =
+                [MTLRenderPipelineDescriptor new];
+            pd.vertexFunction = vertexFn;
+            pd.fragmentFunction = fragmentFn;
+            pd.vertexDescriptor = vd;
+            pd.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+            pd.colorAttachments[0].pixelFormat = colorFormat;
+            if (blendingEnabled && colorFormat != MTLPixelFormatInvalid) {
+                pd.colorAttachments[0].blendingEnabled = YES;
+                pd.colorAttachments[0].sourceRGBBlendFactor =
+                    MTLBlendFactorSourceAlpha;
+                pd.colorAttachments[0].destinationRGBBlendFactor =
+                    MTLBlendFactorOneMinusSourceAlpha;
+                pd.colorAttachments[0].sourceAlphaBlendFactor =
+                    MTLBlendFactorSourceAlpha;
+                pd.colorAttachments[0].destinationAlphaBlendFactor =
+                    MTLBlendFactorOneMinusSourceAlpha;
+            }
+            if (sampleCount > 1) {
+                pd.sampleCount = sampleCount;
+            }
+            return [device_ newRenderPipelineStateWithDescriptor:pd
+                                                           error:error];
         }
     }
 
@@ -560,7 +837,15 @@ private:
                 break;
             }
             activeShaderId_ = command.shaderId;
-            [encoder setRenderPipelineState:it->second.pipeline];
+            auto pipelineIt =
+                it->second.pipelines.find((int)currentColorFormat_);
+            if (pipelineIt != it->second.pipelines.end() &&
+                pipelineIt->second != nil) {
+                [encoder setRenderPipelineState:pipelineIt->second];
+            } else {
+                activeShaderId_ = 0;
+                break;
+            }
             if (uniformBlob_.size() < it->second.uniformSize) {
                 uniformBlob_.assign(it->second.uniformSize, 0);
             }
@@ -580,6 +865,13 @@ private:
                                      atIndex:command.textureSlot];
             break;
         }
+        case RenderCommandType::SetRenderTarget:
+            // Handled at pass boundaries in endFrame.
+            break;
+        case RenderCommandType::SetDepthWrite:
+            [encoder setDepthStencilState:command.count ? depthState_
+                                                       : depthStateNoWrite_];
+            break;
         case RenderCommandType::BindVertexBuffer: {
             auto it = vertexBuffers_.find(command.vertexBufferId);
             if (it == vertexBuffers_.end()) {
@@ -617,6 +909,28 @@ private:
             uint32_t copyBytes = std::min(slot.size, command.uniformBytes);
             memcpy(uniformBlob_.data() + slot.offset, command.uniformData,
                    copyBytes);
+            break;
+        }
+        case RenderCommandType::SetUniformVec4Array: {
+            if (uniformBlob_.empty()) {
+                break;
+            }
+            auto shader = shaders_.find(activeShaderId_);
+            if (shader == shaders_.end()) {
+                break;
+            }
+            auto it = shader->second.uniforms.find(command.uniformName);
+            if (it == shader->second.uniforms.end()) {
+                break;
+            }
+            const UniformSlot& slot = it->second;
+            if (slot.offset + slot.size > uniformBlob_.size()) {
+                break;
+            }
+            uint32_t copyBytes =
+                std::min(slot.size, command.uniformCount * 16u);
+            memcpy(uniformBlob_.data() + slot.offset,
+                   command.uniformArrayData, copyBytes);
             break;
         }
         case RenderCommandType::Draw: {
@@ -670,14 +984,17 @@ private:
     id<MTLTexture> depthTexture_ = nil;
     uint64_t depthSizeKey_ = 0;
     id<MTLDepthStencilState> depthState_ = nil;
+    id<MTLDepthStencilState> depthStateNoWrite_ = nil;
     id<MTLSamplerState> samplerLinear_ = nil;
     id<MTLSamplerState> samplerNearest_ = nil;
     RendererConfig config_;
     Color currentClear_ = Color::black();
+    TargetColorFormat currentColorFormat_ = TargetColorFormat::Swapchain;
     uint64_t nextId_ = 1;
 
     std::unordered_map<uint64_t, ShaderData> shaders_;
     std::unordered_map<uint64_t, TextureData> textureData_;
+    std::unordered_map<uint64_t, RenderTargetData> renderTargets_;
     std::unordered_map<uint64_t, id<MTLBuffer>> vertexBuffers_;
     std::unordered_map<uint64_t, IndexData> indexBufferData_;
 

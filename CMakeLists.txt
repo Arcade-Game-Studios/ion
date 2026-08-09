@@ -19,12 +19,19 @@ add_library(ion_core STATIC
     core/Camera2D.cpp
     core/Config.cpp
     core/Engine.cpp
+    core/GltfModel.cpp
+    core/Image.cpp
     core/Input.cpp
+    core/Light.cpp
     core/Log.cpp
     core/Memory.cpp
+    core/Mesh.cpp
+    core/Model.cpp
+    core/ObjModel.cpp
     core/ParticleSystem.cpp
     core/PerformanceOverlay.cpp
     core/Render.cpp
+    core/Skybox.cpp
     core/SpriteAnimation.cpp
     core/SpriteBatch.cpp
     core/Svg.cpp
@@ -33,6 +40,8 @@ add_library(ion_core STATIC
     core/Tilemap.cpp
 )
 target_include_directories(ion_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+find_package(ZLIB REQUIRED)
+target_link_libraries(ion_core PUBLIC ZLIB::ZLIB)
 target_compile_definitions(ion_core PUBLIC
     ION_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     ION_VERSION_MINOR=${PROJECT_VERSION_MINOR}
@@ -146,4 +155,15 @@ if(ION_BUILD_TESTS)
         target_link_libraries(2d_test PRIVATE ion_platform_linux)
     endif()
     add_test(NAME 2d_test COMMAND 2d_test)
+
+    add_executable(model_test tests/model_test.cpp)
+    target_link_libraries(model_test PRIVATE ion_core)
+    if(APPLE)
+        target_link_libraries(model_test PRIVATE ion_platform_macos "-framework Cocoa")
+    elseif(WIN32)
+        target_link_libraries(model_test PRIVATE ion_platform_windows)
+    elseif(UNIX)
+        target_link_libraries(model_test PRIVATE ion_platform_linux)
+    endif()
+    add_test(NAME model_test COMMAND model_test)
 endif()

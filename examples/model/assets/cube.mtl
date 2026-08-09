@@ -1,0 +1,9 @@
+newmtl Checker
+Kd 1.0 1.0 1.0
+map_Kd checker.png
+
+newmtl Top
+Kd 0.92 0.62 0.18
+
+newmtl Bottom
+Kd 0.22 0.32 0.55

@@ -6,6 +6,7 @@
 #include <ion/math/Vector4.hpp>
 #include <ion/render/Buffer.hpp>
 #include <ion/render/RenderCommand.hpp>
+#include <ion/render/RenderTarget.hpp>
 #include <ion/render/Shader.hpp>
 #include <ion/render/Texture.hpp>
 
@@ -84,6 +85,23 @@ public:
     void destroyTexture(Texture& texture);
     void setTexture(int slot, const Texture& texture);
 
+    // Creates a cubemap texture from six RGBA8 face buffers (order: +X, -X,
+    // +Y, -Y, +Z, -Z). Each face must contain width*height*4 bytes.
+    Texture createCubemap(const TextureDesc& desc, const void* const faces[6]);
+
+    // Render targets (offscreen color and/or depth buffers). After
+    // setRenderTarget the renderer draws into the target; subsequent
+    // setDefaultRenderTarget() restores the window. The target's color
+    // texture can be bound with setTexture (e.g. for post-processing).
+    RenderTarget createRenderTarget(const RenderTargetDesc& desc);
+    void destroyRenderTarget(RenderTarget& target);
+    void setRenderTarget(const RenderTarget& target);
+    void setDefaultRenderTarget();
+
+    // Controls depth writes for the current draw state. Disable for
+    // background passes such as skyboxes that must not occlude the scene.
+    void setDepthWrite(bool enabled);
+
     // Vertex buffers
     VertexBuffer createVertexBuffer(uint32_t sizeBytes, const void* data);
     void destroyVertexBuffer(VertexBuffer& buffer);
@@ -105,6 +123,10 @@ public:
     void setUniform(const char* name, const Vector3& value);
     void setUniform(const char* name, const Vector4& value);
     void setUniform(const char* name, const Matrix4& value);
+
+    // Sets a vec4 array uniform (up to 8 elements, matching kMaxLights).
+    void setUniform(const char* name, const float* values,
+                    uint32_t vec4Count);
 
     // Draw
     void draw(uint32_t vertexCount);
