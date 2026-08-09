@@ -97,7 +97,8 @@ PHASE 5 - 2D RENDERING
 PHASE 6 - 3D RENDERING
 ==================================================
 
-[ ] 3D camera
+[x] 3D camera
+[x] Depth testing (basic 3D render pipeline + 3d example)
 [ ] Mesh rendering
 [ ] Model loading
 [ ] OBJ support

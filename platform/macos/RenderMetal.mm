@@ -114,6 +114,12 @@ public:
 
             samplerLinear_ = createSampler_(YES);
             samplerNearest_ = createSampler_(NO);
+
+            MTLDepthStencilDescriptor* dsDesc =
+                [MTLDepthStencilDescriptor new];
+            dsDesc.depthCompareFunction = MTLCompareFunctionLessEqual;
+            dsDesc.depthWriteEnabled = YES;
+            depthState_ = [device_ newDepthStencilStateWithDescriptor:dsDesc];
         }
         initialized_ = true;
         return true;
@@ -130,6 +136,8 @@ public:
         vertexBuffers_.clear();
         indexBufferData_.clear();
         commandQueue_ = nil;
+        depthTexture_ = nil;
+        depthState_ = nil;
         device_ = nil;
         view_ = nil;
         initialized_ = false;
@@ -188,6 +196,29 @@ public:
                     msaaSizeKey_ = sizeKey;
                 }
             }
+            uint64_t sizeKey = ((uint64_t)(uint32_t)pixelSize.width << 32) |
+                               (uint32_t)pixelSize.height;
+            if (depthSizeKey_ != sizeKey) {
+                MTLTextureDescriptor* depthDesc =
+                    [MTLTextureDescriptor
+                        texture2DDescriptorWithPixelFormat:
+                            MTLPixelFormatDepth32Float
+                                                       width:(NSUInteger)
+                                                                pixelSize.width
+                                                       height:(NSUInteger)
+                                                                pixelSize.height
+                                                       mipmapped:NO];
+                if (config_.antialiasSamples > 1) {
+                    depthDesc.textureType = MTLTextureType2DMultisample;
+                    depthDesc.sampleCount = config_.antialiasSamples;
+                } else {
+                    depthDesc.textureType = MTLTextureType2D;
+                }
+                depthDesc.storageMode = MTLStorageModePrivate;
+                depthDesc.usage = MTLTextureUsageRenderTarget;
+                depthTexture_ = [device_ newTextureWithDescriptor:depthDesc];
+                depthSizeKey_ = sizeKey;
+            }
             drawable_ = [layer_ nextDrawable];
         }
     }
@@ -220,9 +251,16 @@ public:
                 pass.colorAttachments[0].texture = drawable_.texture;
                 pass.colorAttachments[0].storeAction = MTLStoreActionStore;
             }
+            if (depthTexture_) {
+                pass.depthAttachment.texture = depthTexture_;
+                pass.depthAttachment.clearDepth = 1.0;
+                pass.depthAttachment.loadAction = MTLLoadActionClear;
+                pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+            }
 
             id<MTLRenderCommandEncoder> encoder =
                 [commandBuffer renderCommandEncoderWithDescriptor:pass];
+            [encoder setDepthStencilState:depthState_];
             for (const RenderCommand& command : pendingCommands_) {
                 executeCommand_(encoder, command);
             }
@@ -298,6 +336,7 @@ public:
             pd.vertexFunction = vertexFn;
             pd.fragmentFunction = fragmentFn;
             pd.vertexDescriptor = vd;
+            pd.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
             pd.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
             pd.colorAttachments[0].blendingEnabled = YES;
             pd.colorAttachments[0].sourceRGBBlendFactor =
@@ -628,6 +667,9 @@ private:
     id<CAMetalDrawable> drawable_ = nil;
     id<MTLTexture> msaaTexture_ = nil;
     uint64_t msaaSizeKey_ = 0;
+    id<MTLTexture> depthTexture_ = nil;
+    uint64_t depthSizeKey_ = 0;
+    id<MTLDepthStencilState> depthState_ = nil;
     id<MTLSamplerState> samplerLinear_ = nil;
     id<MTLSamplerState> samplerNearest_ = nil;
     RendererConfig config_;

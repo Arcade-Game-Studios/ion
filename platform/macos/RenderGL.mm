@@ -103,6 +103,8 @@ public:
             glEnableVertexAttribArray(2);
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glEnable(GL_DEPTH_TEST);
+            glDepthFunc(GL_LEQUAL);
             if (config_.antialiasSamples > 1) {
                 glEnable(GL_MULTISAMPLE);
             }
@@ -387,7 +389,8 @@ private:
         case RenderCommandType::Clear:
             glClearColor(command.clearColor.r, command.clearColor.g,
                          command.clearColor.b, command.clearColor.a);
-            glClear(GL_COLOR_BUFFER_BIT);
+            glClearDepth(1.0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
             break;
         case RenderCommandType::UseShader: {
             auto it = shaders_.find(command.shaderId);

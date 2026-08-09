@@ -105,20 +105,54 @@ Draw without indices with `renderer.draw(vertexCount)`.
 
 ## Camera
 
-`ion::Camera` builds view and projection matrices for 3D scenes.
+`ion::Camera` is a first-person 3D camera. Its position is a world-space point
+and its orientation is stored as yaw and pitch, so the camera is always
+upright (roll == 0). It produces a perspective projection by default (60
+degree fov, near 0.1, far 1000) and can switch to orthographic.
 
 ```cpp
 ion::Camera camera;
-camera.setPosition(ion::Vector3(0.0f, 0.0f, 3.0f));
-camera.lookAt(ion::Vector3(0.0f, 0.0f, 0.0f), ion::Vector3(0.0f, 1.0f, 0.0f));
+
+// Move and aim the camera.
+camera.setPosition(ion::Vector3(0.0f, 3.0f, 10.0f));
+camera.setYaw(-0.5f);   // turn left/right
+camera.setPitch(0.2f);  // look up/down (clamped to +/- ~89 deg)
+camera.lookAt(ion::Vector3(0.0f, 0.0f, 0.0f)); // or aim at a point
+
+// The camera derives its aspect ratio from the window size.
+camera.setViewport(windowWidth, windowHeight);
+camera.setFov(1.2f);
 
 // Per frame:
-camera.setPerspective(fovRadians, aspect, 0.1f, 100.0f);
-ion::Matrix4 mvp = camera.projection() * camera.view();
+camera.move(ion::Vector3(0.0f, 0.0f, speed * dt)); // local-space motion
+ion::Matrix4 mvp = camera.viewProjection();
 renderer.setUniform("uMVP", mvp);
 ```
 
-`setOrthographic(left, right, bottom, top, near, far)` is also available.
+`forward()`, `right()` and `up()` return the camera's local-space unit axes.
+`setPerspective(fov, aspect, near, far)` and `setOrthographic(left, right,
+bottom, top, near, far)` replace the projection mode.
+
+## Depth testing
+
+Both the Metal and OpenGL backends render into a depth buffer and test against
+it with `LessEqual` (depth write enabled), so overlapping triangles are
+occluded correctly. The depth buffer is resized automatically with the window
+and matches the MSAA sample count. No API is needed to enable depth testing; it
+is always active. See `examples/3d` for a complete basic 3D scene (colored
+cube, pyramid, checkerboard floor, free-look camera).
+
+```cpp
+// A simple 3D frame with a depth-tested mesh.
+renderer.beginFrame();
+renderer.clear(ion::Color(0.06f, 0.07f, 0.10f));
+renderer.useShader(shader);
+renderer.setUniform("uMVP", camera.viewProjection() * modelMatrix);
+renderer.setVertexBuffer(mesh.vertexBuffer);
+renderer.setIndexBuffer(mesh.indexBuffer);
+renderer.drawIndexed(mesh.indexCount);
+renderer.endFrame();
+```
 
 ## Render commands
 

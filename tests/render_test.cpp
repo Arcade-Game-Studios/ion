@@ -213,6 +213,84 @@ static void testCameraPerspective() {
     CHECK_NEAR(center.y, 0.0f, 1e-4f);
 }
 
+static void testCameraFreeLookBasis() {
+    ion::Camera camera;
+    camera.setPosition(ion::Vector3(1.0f, 2.0f, 3.0f));
+    camera.lookAt(ion::Vector3(1.0f, 2.0f, 2.0f));
+
+    ion::Vector3 f = camera.forward();
+    CHECK_NEAR(f.x, 0.0f, 1e-4f);
+    CHECK_NEAR(f.y, 0.0f, 1e-4f);
+    CHECK_NEAR(f.z, -1.0f, 1e-4f);
+
+    ion::Vector3 r = camera.right();
+    CHECK_NEAR(r.x, 1.0f, 1e-4f);
+    CHECK_NEAR(r.y, 0.0f, 1e-4f);
+    CHECK_NEAR(r.z, 0.0f, 1e-4f);
+
+    ion::Vector3 u = camera.up();
+    CHECK_NEAR(u.x, 0.0f, 1e-4f);
+    CHECK_NEAR(u.y, 1.0f, 1e-4f);
+    CHECK_NEAR(u.z, 0.0f, 1e-4f);
+
+    // yaw 90 degrees turns the camera to face -X (counter-clockwise around
+    // the world +Y axis).
+    camera.setYaw(3.14159265f * 0.5f);
+    f = camera.forward();
+    CHECK_NEAR(f.x, -1.0f, 1e-4f);
+    CHECK_NEAR(f.z, 0.0f, 1e-4f);
+
+    // pitch 1.2 radians tilts the forward vector up.
+    camera.setYaw(0.0f);
+    camera.setPitch(1.2f);
+    f = camera.forward();
+    CHECK_NEAR(f.y, std::sin(1.2f), 1e-4f);
+    CHECK_NEAR(f.z, -std::cos(1.2f), 1e-4f);
+}
+
+static void testCameraYawPitchRoundTrip() {
+    ion::Camera camera;
+    camera.setPosition(ion::Vector3(0.0f, 0.0f, 0.0f));
+    camera.setYaw(0.5f);
+    camera.setPitch(0.3f);
+    ion::Vector3 f = camera.forward();
+    camera.lookAt(camera.position() + f);
+    CHECK_NEAR(camera.yaw(), 0.5f, 1e-4f);
+    CHECK_NEAR(camera.pitch(), 0.3f, 1e-4f);
+}
+
+static void testCameraMove() {
+    ion::Camera camera;
+    camera.setPosition(ion::Vector3(1.0f, 2.0f, 3.0f));
+    camera.lookAt(ion::Vector3(1.0f, 2.0f, 2.0f));
+    camera.move(ion::Vector3(1.0f, 0.0f, 1.0f)); // strafe right + move forward
+    CHECK_NEAR(camera.position().x, 2.0f, 1e-4f);
+    CHECK_NEAR(camera.position().y, 2.0f, 1e-4f);
+    CHECK_NEAR(camera.position().z, 2.0f, 1e-4f);
+}
+
+static void testCameraViewProjection() {
+    ion::Camera camera;
+    camera.setPosition(ion::Vector3(5.0f, 1.0f, 5.0f));
+    camera.lookAt(ion::Vector3(0.0f, 1.0f, 0.0f));
+    camera.setPerspective(1.0f, 16.0f / 9.0f, 0.1f, 100.0f);
+
+    ion::Matrix4 vp = camera.viewProjection();
+
+    // A point straight ahead on the near plane maps to the screen center.
+    ion::Vector3 nearPoint =
+        vp * (camera.position() + camera.forward() * camera.near());
+    CHECK_NEAR(nearPoint.x, 0.0f, 1e-4f);
+    CHECK_NEAR(nearPoint.y, 0.0f, 1e-4f);
+    CHECK_NEAR(nearPoint.z, -0.1f, 1e-4f);
+
+    ion::Vector3 farPoint =
+        vp * (camera.position() + camera.forward() * camera.far());
+    CHECK_NEAR(farPoint.x, 0.0f, 1e-4f);
+    CHECK_NEAR(farPoint.y, 0.0f, 1e-4f);
+    CHECK_NEAR(farPoint.z, 100.0f, 1e-4f);
+}
+
 int main() {
     testNullBackend();
     testCommandRecording();
@@ -220,6 +298,10 @@ int main() {
     testVertexFormat();
     testCameraOrthographic();
     testCameraPerspective();
+    testCameraFreeLookBasis();
+    testCameraYawPitchRoundTrip();
+    testCameraMove();
+    testCameraViewProjection();
 
     if (failures == 0) {
         std::printf("render_test: all tests passed\n");

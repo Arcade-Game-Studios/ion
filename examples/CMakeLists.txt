@@ -11,6 +11,9 @@ if(APPLE)
     add_executable(render_example render/main.cpp)
     target_link_libraries(render_example PRIVATE ion_core ion_platform_macos "-framework Cocoa")
 
+    add_executable(3d_example 3d/main.cpp)
+    target_link_libraries(3d_example PRIVATE ion_core ion_platform_macos "-framework Cocoa")
+
     add_executable(2d_example 2d/main.cpp)
     target_link_libraries(2d_example PRIVATE ion_core ion_platform_macos "-framework Cocoa")
 elseif(WIN32)
