@@ -759,9 +759,13 @@ private:
                 if (size == 0) {
                     continue;
                 }
-                if (member.arrayLength > 1) {
-                    size *= (uint32_t)member.arrayLength;
+                if (member.dataType == MTLDataTypeArray) {
+                    MTLArrayType *arrayType = [member arrayType];
+                    if (arrayType.arrayLength > 1) {
+                        size *= (uint32_t)arrayType.arrayLength;
+                    }
                 }
+
                 UniformSlot slot;
                 slot.offset = (uint32_t)member.offset;
                 slot.size = size;
