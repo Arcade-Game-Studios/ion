@@ -323,6 +323,10 @@ void* Window::nativeHandle() {
     return impl ? (void*)impl->hwnd : nullptr;
 }
 
+void* Window::nativeDisplay() {
+    return (void*)GetModuleHandleW(nullptr);
+}
+
 void Window::setFullscreen(bool fullscreen) {
     if (!impl || !impl->hwnd) {
         impl->config.fullscreen = fullscreen;

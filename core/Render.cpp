@@ -15,6 +15,9 @@ namespace ion {
 extern RenderBackend* createMetalBackend();
 extern RenderBackend* createOpenGLBackend();
 #endif
+#ifdef ION_ENABLE_VULKAN
+extern RenderBackend* createVulkanBackend();
+#endif
 extern RenderBackend* createNullBackend();
 
 namespace {
@@ -35,6 +38,15 @@ RenderBackend* createBackend(RendererBackend backend) {
         return createOpenGLBackend();
     }
 #else
+    if (backend == RendererBackend::Vulkan) {
+#ifdef ION_ENABLE_VULKAN
+        return createVulkanBackend();
+#else
+        ION_LOG_WARN("Renderer backend not supported on this platform, "
+                     "falling back to the Null backend");
+        return createNullBackend();
+#endif
+    }
     if (backend == RendererBackend::Metal || backend == RendererBackend::OpenGL) {
         ION_LOG_WARN("Renderer backend not supported on this platform, "
                      "falling back to the Null backend");
@@ -61,6 +73,8 @@ public:
         if (requested == RendererBackend::Automatic) {
 #ifdef __APPLE__
             requested = RendererBackend::Metal;
+#elif defined(ION_ENABLE_VULKAN)
+            requested = RendererBackend::Vulkan;
 #else
             requested = RendererBackend::Null;
 #endif
@@ -79,7 +93,8 @@ public:
         }
 
         void* nativeView = window ? window->nativeHandle() : nullptr;
-        if (!backend->initialize(nativeView, config)) {
+        void* nativeDisplay = window ? window->nativeDisplay() : nullptr;
+        if (!backend->initialize(nativeView, config, nativeDisplay)) {
             ION_LOG_ERROR("Renderer backend initialization failed");
             shutdown();
             return false;
@@ -513,7 +528,7 @@ namespace {
 //
 class NullBackend : public RenderBackend {
 public:
-    bool initialize(void*, const RendererConfig&) override {
+    bool initialize(void*, const RendererConfig&, void*) override {
         return true;
     }
 

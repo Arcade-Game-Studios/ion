@@ -21,6 +21,7 @@ enum class RendererBackend {
     Automatic,
     Metal,
     OpenGL,
+    Vulkan,
     Null,
 };
 

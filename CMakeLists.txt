@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ION_BUILD_EXAMPLES "Build example programs" ON)
 option(ION_BUILD_TESTS "Build tests" ON)
+option(ION_ENABLE_VULKAN "Enable the Vulkan render backend" ON)
 
 add_library(ion_core STATIC
     core/Application.cpp
@@ -48,6 +49,41 @@ target_compile_definitions(ion_core PUBLIC
     ION_VERSION_PATCH=${PROJECT_VERSION_PATCH}
     ION_MEMORY_TRACKING
 )
+
+if(ION_ENABLE_VULKAN AND NOT APPLE)
+    # Locate the Vulkan loader. Prefer the dev symlink (libvulkan.so), but
+    # also accept the versioned runtime library that ships with drivers.
+    set(ION_VULKAN_LOADER "" CACHE FILEPATH "Path to the Vulkan loader library")
+    if(NOT ION_VULKAN_LOADER)
+        find_library(ION_VULKAN_FIND NAMES vulkan vulkan-1)
+        if(ION_VULKAN_FIND)
+            set(ION_VULKAN_LOADER "${ION_VULKAN_FIND}")
+        endif()
+    endif()
+    if(NOT ION_VULKAN_LOADER AND UNIX)
+        find_library(ION_VULKAN_SONAME NAMES libvulkan.so.1
+            PATHS /usr/lib64 /usr/lib /lib64 /lib NO_DEFAULT_PATH)
+        if(ION_VULKAN_SONAME)
+            set(ION_VULKAN_LOADER "${ION_VULKAN_SONAME}")
+        endif()
+    endif()
+    if(ION_VULKAN_LOADER)
+        target_sources(ion_core PRIVATE core/RenderVulkan.cpp)
+        target_include_directories(ion_core PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/Vulkan-Headers/include)
+        target_compile_definitions(ion_core PRIVATE ION_ENABLE_VULKAN)
+        target_link_libraries(ion_core PUBLIC ${ION_VULKAN_LOADER})
+        if(UNIX)
+            find_library(ION_DL_LIBRARY NAMES dl)
+            if(ION_DL_LIBRARY)
+                target_link_libraries(ion_core PUBLIC ${ION_DL_LIBRARY})
+            endif()
+        endif()
+        message(STATUS "Vulkan backend enabled (loader: ${ION_VULKAN_LOADER})")
+    else()
+        message(WARNING "Vulkan loader not found; ION_ENABLE_VULKAN ignored")
+    endif()
+endif()
 
 if(APPLE)
     add_library(ion_platform_macos OBJECT
