@@ -11,25 +11,25 @@ struct Vector2 {
     constexpr Vector2() : x(0.0f), y(0.0f) {}
     constexpr Vector2(float x, float y) : x(x), y(y) {}
 
-    Vector2& operator+=(const Vector2& other) {
+    constexpr Vector2& operator+=(const Vector2& other) {
         x += other.x;
         y += other.y;
         return *this;
     }
 
-    Vector2& operator-=(const Vector2& other) {
+    constexpr Vector2& operator-=(const Vector2& other) {
         x -= other.x;
         y -= other.y;
         return *this;
     }
 
-    Vector2& operator*=(float scalar) {
+    constexpr Vector2& operator*=(float scalar) {
         x *= scalar;
         y *= scalar;
         return *this;
     }
 
-    Vector2& operator/=(float scalar) {
+    constexpr Vector2& operator/=(float scalar) {
         x /= scalar;
         y /= scalar;
         return *this;

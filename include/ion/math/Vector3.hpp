@@ -12,28 +12,28 @@ struct Vector3 {
     constexpr Vector3() : x(0.0f), y(0.0f), z(0.0f) {}
     constexpr Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
 
-    Vector3& operator+=(const Vector3& other) {
+    constexpr Vector3& operator+=(const Vector3& other) {
         x += other.x;
         y += other.y;
         z += other.z;
         return *this;
     }
 
-    Vector3& operator-=(const Vector3& other) {
+    constexpr Vector3& operator-=(const Vector3& other) {
         x -= other.x;
         y -= other.y;
         z -= other.z;
         return *this;
     }
 
-    Vector3& operator*=(float scalar) {
+    constexpr Vector3& operator*=(float scalar) {
         x *= scalar;
         y *= scalar;
         z *= scalar;
         return *this;
     }
 
-    Vector3& operator/=(float scalar) {
+    constexpr Vector3& operator/=(float scalar) {
         x /= scalar;
         y /= scalar;
         z /= scalar;
