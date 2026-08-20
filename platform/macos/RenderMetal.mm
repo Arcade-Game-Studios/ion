@@ -446,7 +446,7 @@ public:
             NSError* pipelineError = nil;
             data.pipelines[(int)TargetColorFormat::Swapchain] =
                 buildPipeline_(vertexFn, fragmentFn, vd,
-                               MTLPixelFormatBGRA8Unorm, false, 0,
+                               MTLPixelFormatBGRA8Unorm, true, 0,
                                &pipelineError);
             data.pipelines[(int)TargetColorFormat::RGBA8] =
                 buildPipeline_(vertexFn, fragmentFn, vd,
