@@ -12,3 +12,5 @@ cmake-build-*/
 *.exe
 
 .DS_Store
+
+prompt.txt
