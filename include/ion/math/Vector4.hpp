@@ -14,7 +14,7 @@ struct Vector4 {
     constexpr Vector4(float x, float y, float z, float w = 1.0f)
         : x(x), y(y), z(z), w(w) {}
 
-    Vector4& operator+=(const Vector4& other) {
+    constexpr Vector4& operator+=(const Vector4& other) {
         x += other.x;
         y += other.y;
         z += other.z;
@@ -22,7 +22,7 @@ struct Vector4 {
         return *this;
     }
 
-    Vector4& operator-=(const Vector4& other) {
+    constexpr Vector4& operator-=(const Vector4& other) {
         x -= other.x;
         y -= other.y;
         z -= other.z;
@@ -30,7 +30,7 @@ struct Vector4 {
         return *this;
     }
 
-    Vector4& operator*=(float scalar) {
+    constexpr Vector4& operator*=(float scalar) {
         x *= scalar;
         y *= scalar;
         z *= scalar;
@@ -38,7 +38,7 @@ struct Vector4 {
         return *this;
     }
 
-    Vector4& operator/=(float scalar) {
+    constexpr Vector4& operator/=(float scalar) {
         x /= scalar;
         y /= scalar;
         z /= scalar;

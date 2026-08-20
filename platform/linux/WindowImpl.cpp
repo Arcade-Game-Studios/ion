@@ -340,6 +340,10 @@ void* Window::nativeHandle() {
     return impl ? reinterpret_cast<void*>((uintptr_t)impl->window) : nullptr;
 }
 
+void* Window::nativeDisplay() {
+    return impl ? (void*)impl->display : nullptr;
+}
+
 void Window::setFullscreen(bool fullscreen) {
     if (!impl || !impl->display || !impl->window) {
         impl->config.fullscreen = fullscreen;

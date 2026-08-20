@@ -93,7 +93,9 @@ public:
         shutdown();
     }
 
-    bool initialize(void* nativeView, const RendererConfig& config) override {
+    bool initialize(void* nativeView, const RendererConfig& config,
+                    void* nativeDisplay) override {
+        (void)nativeDisplay;
         if (initialized_) {
             return true;
         }

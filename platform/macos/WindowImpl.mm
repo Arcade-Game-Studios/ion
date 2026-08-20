@@ -494,6 +494,10 @@ void* Window::nativeHandle() {
     return (__bridge void*)[impl->window contentView];
 }
 
+void* Window::nativeDisplay() {
+    return nullptr;
+}
+
 void Window::setFullscreen(bool fullscreen) {
     if (!impl || !impl->window) {
         return;

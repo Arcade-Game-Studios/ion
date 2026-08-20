@@ -44,6 +44,11 @@ public:
 
     void* nativeHandle();
 
+    // Platform-specific display/application handle used by graphics backends
+    // (X11 Display, Win32 HINSTANCE, etc.). Returns nullptr where not
+    // applicable.
+    void* nativeDisplay();
+
 private:
     class Impl;
     Impl* impl = nullptr;

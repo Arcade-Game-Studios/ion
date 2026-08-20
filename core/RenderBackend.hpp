@@ -23,7 +23,8 @@ class RenderBackend {
 public:
     virtual ~RenderBackend() = default;
 
-    virtual bool initialize(void* nativeView, const RendererConfig& config) = 0;
+    virtual bool initialize(void* nativeView, const RendererConfig& config,
+                            void* nativeDisplay = nullptr) = 0;
     virtual void shutdown() = 0;
     virtual GPUInfo gpuInfo() const = 0;
 
