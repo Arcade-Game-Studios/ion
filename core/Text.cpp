@@ -2,7 +2,12 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <fstream>
 #include <vector>
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "stb_truetype.h"
 
 namespace ion {
 
@@ -214,12 +219,17 @@ constexpr uint8_t kFont5x7[95][kGlyphHeight] = {
 
 } // namespace
 
+// ---------------------------------------------------------------------------
+// Built-in bitmap font
+// ---------------------------------------------------------------------------
+
 bool Font::initialize(Renderer* renderer) {
     shutdown();
     if (!renderer) {
         return false;
     }
     renderer_ = renderer;
+    trueType_ = false;
 
     constexpr uint32_t rows = 6; // 95 glyphs / 16 columns
     constexpr uint32_t width = kColumns * kPitch;
@@ -259,6 +269,179 @@ bool Font::initialize(Renderer* renderer) {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// TrueType font loading
+// ---------------------------------------------------------------------------
+
+bool Font::loadFromFile(Renderer* renderer, const std::string& path,
+                        float fontSize) {
+    shutdown();
+    if (!renderer) {
+        return false;
+    }
+
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        std::fprintf(stderr, "Font: cannot open %s\n", path.c_str());
+        return false;
+    }
+
+    auto fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> ttfData((size_t)fileSize);
+    if (!file.read(reinterpret_cast<char*>(ttfData.data()), fileSize)) {
+        std::fprintf(stderr, "Font: failed to read %s\n", path.c_str());
+        return false;
+    }
+
+    renderer_ = renderer;
+    bool ok = initTrueTypeAtlas(renderer, ttfData.data(), fontSize);
+    if (!ok) {
+        shutdown();
+        return false;
+    }
+    return true;
+}
+
+bool Font::initTrueTypeAtlas(Renderer* renderer, const uint8_t* ttfData,
+                             float fontSize) {
+    stbtt_fontinfo font;
+    if (!stbtt_InitFont(&font, ttfData,
+                        stbtt_GetFontOffsetForIndex(ttfData, 0))) {
+        std::fprintf(stderr, "Font: failed to parse TTF data\n");
+        return false;
+    }
+
+    trueType_ = true;
+    ttFontSize_ = fontSize;
+
+    float scale = stbtt_ScaleForPixelHeight(&font, fontSize);
+
+    int ascent, descent, lineGap;
+    stbtt_GetFontVMetrics(&font, &ascent, &descent, &lineGap);
+    baseline_ = (float)ascent * scale;
+    lineHeight_ = ((float)ascent - (float)descent + (float)lineGap) * scale;
+
+    // Rasterize all printable ASCII glyphs (32-126).
+    constexpr int FIRST_CHAR = 32;
+    constexpr int NUM_CHARS = 95;
+
+    // First pass: measure each glyph to compute atlas dimensions.
+    struct RawGlyph {
+        uint32_t codepoint;
+        int ix0, iy0, ix1, iy1;
+        float xadvance;
+        int width, height;
+    };
+    std::vector<RawGlyph> raw(NUM_CHARS);
+
+    int totalWidth = 0;
+    int maxHeight = 0;
+    for (int i = 0; i < NUM_CHARS; i++) {
+        int ch = FIRST_CHAR + i;
+        raw[i].codepoint = (uint32_t)ch;
+        stbtt_GetCodepointBitmapBox(&font, ch, scale, scale,
+                                    &raw[i].ix0, &raw[i].iy0,
+                                    &raw[i].ix1, &raw[i].iy1);
+        raw[i].width = raw[i].ix1 - raw[i].ix0;
+        raw[i].height = raw[i].iy1 - raw[i].iy0;
+        int advance;
+        stbtt_GetCodepointHMetrics(&font, ch, &advance, nullptr);
+        raw[i].xadvance = (float)advance * scale;
+        totalWidth += raw[i].width + 1;
+        if (raw[i].height > maxHeight) {
+            maxHeight = raw[i].height;
+        }
+    }
+
+    // Pack into a roughly square atlas.
+    int cols = 1;
+    while (cols * cols < totalWidth) {
+        cols++;
+    }
+    if (cols < 16) {
+        cols = 16;
+    }
+    int atlasW = cols * (maxHeight + 2);
+    int atlasH = ((NUM_CHARS + cols - 1) / cols) * (maxHeight + 2);
+    // Round up to power-of-two for GPU.
+    auto pot = [](int v) {
+        int p = 1;
+        while (p < v) {
+            p <<= 1;
+        }
+        return p;
+    };
+    atlasW = pot(atlasW);
+    atlasH = pot(atlasH);
+    atlasWidth_ = (uint32_t)atlasW;
+    atlasHeight_ = (uint32_t)atlasH;
+
+    std::vector<uint8_t> pixels((size_t)atlasW * atlasH * 4, 0);
+
+    // Second pass: rasterize and place glyphs.
+    glyphs_.clear();
+    int penX = 0;
+    int penY = 0;
+    int rowHeight = maxHeight + 2;
+
+    for (int i = 0; i < NUM_CHARS; i++) {
+        if (penX + raw[i].width + 1 > atlasW) {
+            penX = 0;
+            penY += rowHeight;
+        }
+
+        GlyphInfo g;
+        g.x = (uint32_t)penX;
+        g.y = (uint32_t)penY;
+        g.width = (uint32_t)raw[i].width;
+        g.height = (uint32_t)raw[i].height;
+        g.xoff = (float)raw[i].ix0;
+        g.yoff = (float)raw[i].iy0;
+        g.xadvance = raw[i].xadvance;
+        glyphs_[raw[i].codepoint] = g;
+
+        if (raw[i].width > 0 && raw[i].height > 0) {
+            // Rasterize into a temporary buffer.
+            std::vector<uint8_t> bmp((size_t)raw[i].width * raw[i].height);
+            stbtt_MakeCodepointBitmap(&font, bmp.data(),
+                                      raw[i].width, raw[i].height,
+                                      raw[i].width, scale, scale,
+                                      FIRST_CHAR + i);
+
+            // Copy into atlas (white pixels with alpha from SDF).
+            for (int by = 0; by < raw[i].height; by++) {
+                for (int bx = 0; bx < raw[i].width; bx++) {
+                    uint8_t a = bmp[(size_t)by * raw[i].width + bx];
+                    size_t idx =
+                        ((size_t)(penY + by) * atlasW + (penX + bx)) * 4;
+                    pixels[idx + 0] = 255;
+                    pixels[idx + 1] = 255;
+                    pixels[idx + 2] = 255;
+                    pixels[idx + 3] = a;
+                }
+            }
+        }
+
+        penX += raw[i].width + 1;
+    }
+
+    TextureDesc desc;
+    desc.width = atlasWidth_;
+    desc.height = atlasHeight_;
+    desc.filterLinear = true;
+    atlas_ = renderer_->createTexture(desc, pixels.data());
+    if (!atlas_.isValid()) {
+        return false;
+    }
+    initialized_ = true;
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Common
+// ---------------------------------------------------------------------------
+
 void Font::shutdown() {
     if (renderer_ && atlas_.isValid()) {
         renderer_->destroyTexture(atlas_);
@@ -266,6 +449,8 @@ void Font::shutdown() {
     renderer_ = nullptr;
     atlas_ = Texture();
     initialized_ = false;
+    trueType_ = false;
+    glyphs_.clear();
 }
 
 bool Font::isInitialized() const {
@@ -275,9 +460,46 @@ bool Font::isInitialized() const {
 void Font::draw(SpriteBatch& batch, const std::string& text,
                 const Vector2& position, float glyphHeight,
                 const Color& color) {
-    if (!initialized_ || glyphHeight <= 0.0f) {
+    if (!initialized_ || text.empty()) {
         return;
     }
+
+    if (trueType_) {
+        float cursorX = position.x;
+        float cursorY = position.y;
+
+        for (char c : text) {
+            if (c == '\n') {
+                cursorX = position.x;
+                cursorY -= lineHeight_;
+                continue;
+            }
+            auto it = glyphs_.find((uint32_t)c);
+            if (it == glyphs_.end()) {
+                continue;
+            }
+            const GlyphInfo& g = it->second;
+            if (g.width > 0 && g.height > 0) {
+                SpriteRegion region;
+                region.texture = atlas_;
+                region.x = g.x;
+                region.y = g.y;
+                region.width = g.width;
+                region.height = g.height;
+                region.computeUV();
+
+                batch.drawSprite(
+                    region,
+                    Vector2(cursorX + g.xoff, cursorY + g.yoff),
+                    Vector2((float)g.width, (float)g.height),
+                    0.0f, {0.0f, 0.0f}, color);
+            }
+            cursorX += g.xadvance;
+        }
+        return;
+    }
+
+    // Bitmap font path.
     float scale = glyphHeight / (float)kGlyphHeight;
     float cursorX = position.x;
     float cursorY = position.y;
@@ -312,9 +534,32 @@ void Font::draw(SpriteBatch& batch, const std::string& text,
 }
 
 Vector2 Font::measure(const std::string& text, float glyphHeight) const {
-    if (!initialized_ || glyphHeight <= 0.0f) {
+    if (!initialized_ || text.empty()) {
         return Vector2();
     }
+
+    if (trueType_) {
+        float width = 0.0f;
+        float maxWidth = 0.0f;
+        int lines = 1;
+        for (char c : text) {
+            if (c == '\n') {
+                maxWidth = std::max(maxWidth, width);
+                width = 0.0f;
+                lines++;
+                continue;
+            }
+            auto it = glyphs_.find((uint32_t)c);
+            if (it == glyphs_.end()) {
+                continue;
+            }
+            width += it->second.xadvance;
+        }
+        maxWidth = std::max(maxWidth, width);
+        return Vector2(maxWidth, lineHeight_ * (float)lines);
+    }
+
+    // Bitmap font path.
     float scale = glyphHeight / (float)kGlyphHeight;
     float lineHeight = (float)kCellHeight * scale;
     float width = 0.0f;
@@ -342,11 +587,11 @@ Texture Font::texture() const {
 }
 
 uint32_t Font::glyphWidth() const {
-    return kGlyphWidth;
+    return glyphWidth_;
 }
 
 uint32_t Font::glyphHeight() const {
-    return kGlyphHeight;
+    return glyphHeight_;
 }
 
 } // namespace ion

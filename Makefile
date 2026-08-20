@@ -10,7 +10,10 @@ all:
 	cmake --build $(BUILD_DIR)
 
 run: all
-	./$(BUILD_DIR)/window_test
+	./$(BUILD_DIR)/$(APP_TARGET)
+
+run-%: all
+	./$(BUILD_DIR)/examples/$*
 
 bundle: all
 	./scripts/build_app.sh $(APP_NAME) $(APP_TARGET) $(BUILD_TYPE)

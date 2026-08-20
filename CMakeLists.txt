@@ -40,6 +40,7 @@ add_library(ion_core STATIC
     core/Tilemap.cpp
 )
 target_include_directories(ion_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(ion_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 find_package(ZLIB REQUIRED)
 target_link_libraries(ion_core PUBLIC ZLIB::ZLIB)
 target_compile_definitions(ion_core PUBLIC
@@ -50,7 +51,7 @@ target_compile_definitions(ion_core PUBLIC
 )
 
 if(APPLE)
-    add_library(ion_platform_macos OBJECT
+    add_library(ion_platform_macos STATIC
         platform/macos/WindowImpl.mm
         platform/macos/Paths.mm
         platform/macos/InputImpl.mm
@@ -74,14 +75,14 @@ if(APPLE)
         "-framework QuartzCore"
         "-framework OpenGL")
 elseif(WIN32)
-    add_library(ion_platform_windows OBJECT
+    add_library(ion_platform_windows STATIC
         platform/windows/WindowImpl.cpp
         platform/windows/Paths.cpp
         platform/windows/InputImpl.cpp
     )
     target_include_directories(ion_platform_windows PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 elseif(UNIX)
-    add_library(ion_platform_linux OBJECT
+    add_library(ion_platform_linux STATIC
         platform/linux/WindowImpl.cpp
         platform/linux/Paths.cpp
         platform/linux/InputImpl.cpp
@@ -167,3 +168,25 @@ if(ION_BUILD_TESTS)
     endif()
     add_test(NAME model_test COMMAND model_test)
 endif()
+
+include(GNUInstallDirs)
+
+install(TARGETS ion_core
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ion)
+
+if(APPLE)
+    install(TARGETS ion_platform_macos
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+elseif(WIN32)
+    install(TARGETS ion_platform_windows
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+elseif(UNIX)
+    install(TARGETS ion_platform_linux
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
+
+install(DIRECTORY include/ion DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(FILES cmake/ion-config.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ion)
