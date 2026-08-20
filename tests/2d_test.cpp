@@ -289,7 +289,7 @@ static void testSpriteBatchNull() {
     CHECK(renderer.initialize(nullptr, rendererConfig));
 
     ion::SpriteBatch batch;
-    CHECK(batch.initialize(&renderer, 16));
+    CHECK(batch.initialize(&renderer, nullptr, 16));
     CHECK(batch.isInitialized());
     CHECK(batch.quadCount() == 0);
     CHECK(batch.drawCallCount() == 0);

@@ -16,7 +16,7 @@ bool PerformanceOverlay::initialize(Renderer* renderer, uint32_t viewportWidth,
     }
     renderer_ = renderer;
 
-    if (!batch_.initialize(renderer_, 256)) {
+    if (!batch_.initialize(renderer_, nullptr, 256)) {
         shutdown();
         return false;
     }

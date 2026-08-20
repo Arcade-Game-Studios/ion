@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ion/math/Vector2.hpp>
+#include <ion/platform/Window.hpp>
 #include <ion/render/Camera2D.hpp>
 #include <ion/render/Renderer.hpp>
 #include <ion/render/SpriteRegion.hpp>
@@ -39,7 +40,7 @@ public:
     SpriteBatch(const SpriteBatch&) = delete;
     SpriteBatch& operator=(const SpriteBatch&) = delete;
 
-    bool initialize(Renderer* renderer, uint32_t maxQuads = 8192);
+    bool initialize(Renderer* renderer, Window* window, uint32_t maxQuads = 8192);
     void shutdown();
     bool isInitialized() const;
 
@@ -90,6 +91,7 @@ private:
                           const Color& color);
 
     Renderer* renderer_ = nullptr;
+    Window* window_ = nullptr;
     Shader shader_;
     Texture whiteTexture_;
     SpriteRegion whiteRegion_;

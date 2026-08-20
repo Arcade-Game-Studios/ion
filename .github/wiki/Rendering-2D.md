@@ -43,7 +43,7 @@ Untextured primitives use a built-in 1x1 white texture tinted by vertex color.
 
 ```cpp
 ion::SpriteBatch batch;
-batch.initialize(&renderer, /*maxQuads=*/8192);
+batch.initialize(&renderer, &window, /*maxQuads=*/8192);
 
 // In render():
 renderer.beginFrame();

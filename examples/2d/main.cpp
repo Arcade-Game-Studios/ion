@@ -253,7 +253,7 @@ private:
         heroFrames_ = {*atlas_.find("hero_0"), *atlas_.find("hero_1"),
                        *atlas_.find("hero_2")};
 
-        if (!batch_.initialize(&renderer_, 8192)) {
+        if (!batch_.initialize(&renderer_, &window_, 8192)) {
             return false;
         }
 

@@ -138,12 +138,13 @@ SpriteBatch& SpriteBatch::operator=(SpriteBatch&& other) noexcept {
     return *this;
 }
 
-bool SpriteBatch::initialize(Renderer* renderer, uint32_t maxQuads) {
+bool SpriteBatch::initialize(Renderer* renderer, Window* window, uint32_t maxQuads) {
     shutdown();
     if (!renderer || maxQuads == 0) {
         return false;
     }
     renderer_ = renderer;
+    window_ = window;
     maxQuads_ = maxQuads;
 
     bool isMetal = renderer->gpuInfo().backend == RendererBackend::Metal;
@@ -234,6 +235,9 @@ void SpriteBatch::begin(const Camera2D& camera) {
     thisFrameBuffers_.clear();
 
     camera_ = camera;
+    if (window_) {
+        camera_.setViewport(window_->width(), window_->height());
+    }
     activeTexture_ = 0;
     drawCalls_ = 0;
     begun_ = true;

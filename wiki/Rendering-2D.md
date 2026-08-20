@@ -40,8 +40,11 @@ in sync. The `Camera2D` stores viewport dimensions and builds an orthographic
 projection from them — if the viewport is stale after a resize, sprites will
 stretch.
 
+When using `SpriteBatch`, the viewport is automatically synced from the window
+in `begin()` — no manual `setViewport()` calls needed.
+
 ```cpp
-// In your onResize callback or update loop:
+// Manual sync (only if not using SpriteBatch, or for standalone camera use):
 camera.setViewport(window.width(), window.height());
 ```
 
@@ -53,7 +56,7 @@ Untextured primitives use a built-in 1x1 white texture tinted by vertex color.
 
 ```cpp
 ion::SpriteBatch batch;
-batch.initialize(&renderer, /*maxQuads=*/8192);
+batch.initialize(&renderer, &window, /*maxQuads=*/8192);
 
 // In render():
 renderer.beginFrame();

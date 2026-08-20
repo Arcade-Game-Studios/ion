@@ -38,7 +38,7 @@ int main() {
     camera.setPosition(ion::Vector2(window.width() * 0.5f, window.height() * 0.5f));
 
     ion::SpriteBatch batch;
-    if (!batch.initialize(&renderer, 4096)) {
+    if (!batch.initialize(&renderer, &window, 4096)) {
         std::printf("failed to initialize sprite batch\n");
         renderer.shutdown();
         window.destroy();
