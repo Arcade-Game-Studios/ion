@@ -6,7 +6,43 @@
 - A C++20 compiler
 - macOS, Windows, or Linux
 
-## Build
+## Install (recommended)
+
+The easiest way to use Ion in game projects. Installs headers and libraries
+to `~/.ion`:
+
+```sh
+./install-ion.sh
+```
+
+Then start a new game:
+
+```sh
+mkdir my_game && cd my_game
+cp ~/.ion/template/* .
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Debug
+cmake --build . && ./my_game
+```
+
+Or create a project with Ion bundled (no install needed):
+
+```sh
+./new-game.sh my_game
+cd my_game
+make run
+```
+
+To update later:
+
+```sh
+cd /path/to/ion-engine
+./update-ion.sh
+```
+
+See [Installing](Installing.md) for full details.
+
+## Build from source
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -76,6 +112,7 @@ int main() {
     config.title = "My Game";
     config.width = 960;
     config.height = 540;
+    config.resizable = true;
 
     ion::Window window(config);
     if (!window.create()) {

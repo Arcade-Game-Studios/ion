@@ -176,6 +176,112 @@ renderer.drawIndexed(mesh.indexCount);
 renderer.endFrame();
 ```
 
+## Render targets
+
+Offscreen render targets (framebuffer objects) for post-processing, mirrors,
+or rendering-to-texture.
+
+```cpp
+ion::RenderTargetDesc rtDesc;
+rtDesc.width = 512;
+rtDesc.height = 512;
+rtDesc.format = ion::TextureFormat::RGBA8;
+rtDesc.withDepth = true;
+
+ion::RenderTarget target = renderer.createRenderTarget(rtDesc);
+
+// Render into the target:
+renderer.setRenderTarget(target);
+renderer.beginFrame();
+renderer.clear(ion::Color(0.0f, 0.0f, 0.0f));
+// ... draw scene ...
+renderer.endFrame();
+
+// Switch back to the window:
+renderer.setDefaultRenderTarget();
+
+// Use target.color as a texture in subsequent passes:
+renderer.setTexture(0, target.color);
+```
+
+API: `createRenderTarget(desc)`, `destroyRenderTarget(target)`,
+`setRenderTarget(target)`, `setDefaultRenderTarget()`.
+
+## Lighting
+
+Up to 8 dynamic lights (directional or point) with per-material ambient color.
+
+```cpp
+ion::Lighting lighting;
+lighting.ambient = ion::Color(0.1f, 0.1f, 0.15f);
+
+lighting.lights[0].type = ion::LightType::Directional;
+lighting.lights[0].direction = ion::Vector3(-0.4f, -0.7f, -0.5f);
+lighting.lights[0].color = ion::Color(1.0f, 0.95f, 0.9f);
+lighting.lights[0].intensity = 1.0f;
+lighting.lightCount = 1;
+
+ion::setLighting(renderer, lighting);
+```
+
+Light types: `Directional` (infinite distance, direction only) and `Point`
+(position + range falloff). `kMaxLights` is 8.
+
+## Skybox
+
+A procedural gradient skybox rendered as a fullscreen background pass.
+
+```cpp
+ion::SkyboxConfig skyConfig;
+skyConfig.top = ion::Vector3(0.3f, 0.5f, 0.9f);     // sky blue
+skyConfig.horizon = ion::Vector3(0.8f, 0.85f, 0.9f); // haze
+skyConfig.bottom = ion::Vector3(0.2f, 0.2f, 0.3f);  // dark ground
+skyConfig.size = 100.0f;
+
+ion::Texture skyboxTex = ion::createSkyboxTexture(renderer, skyConfig);
+```
+
+Use `createCubemap()` for custom 6-face cubemaps from loaded images.
+
+## SVG
+
+Parse and rasterize SVG images to RGBA8 pixels.
+
+```cpp
+ion::SvgImage svg;
+if (svg.parseFile("assets/icon.svg")) {
+    std::vector<uint8_t> pixels = svg.rasterize();
+    // Create a texture from the rasterized pixels:
+    ion::TextureDesc desc;
+    desc.width = svg.width();
+    desc.height = svg.height();
+    desc.filterLinear = true;
+    ion::Texture tex = renderer.createTexture(desc, pixels.data());
+}
+
+// Or use the one-shot helper:
+ion::Texture tex = svg.createTexture(renderer);
+```
+
+API: `parse(svgString)`, `parseFile(path)`, `isValid()`, `width()`, `height()`,
+`rasterize()`, `createTexture(renderer)`.
+
+## Performance overlay
+
+A built-in FPS and frame-time overlay that draws directly to the screen.
+
+```cpp
+ion::PerformanceOverlay overlay;
+overlay.initialize(&renderer, window.width(), window.height());
+overlay.setEnabled(true);
+
+// Each frame, between beginFrame and endFrame:
+overlay.render();
+```
+
+API: `initialize(renderer, viewportW, viewportH)`, `shutdown()`,
+`setEnabled(bool)`, `isEnabled()`, `setViewport(w, h)`, `setFontSize(height)`.
+
 ## Render commands
 
 `Renderer` records `RenderCommand`s between frames. For debugging and tests:

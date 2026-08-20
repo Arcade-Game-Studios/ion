@@ -35,6 +35,16 @@ ion::Vector2 screen = camera.worldToScreen(someWorldPoint);
 ion::Matrix4 vp = camera.viewProjection(); // used internally by the batch
 ```
 
+Call `setViewport()` whenever the window is resized to keep the projection
+in sync. The `Camera2D` stores viewport dimensions and builds an orthographic
+projection from them — if the viewport is stale after a resize, sprites will
+stretch.
+
+```cpp
+// In your onResize callback or update loop:
+camera.setViewport(window.width(), window.height());
+```
+
 ## SpriteBatch
 
 The core batching API. Everything drawn with the batch shares its built-in
@@ -187,9 +197,13 @@ API: `setConfig`, `setPosition`, `burst(count)`, `start`, `stop`, `isActive`,
 
 ## Text
 
-Bitmap-font text rendering with a built-in 5x7 pixel font (ASCII 32–126) — no
-external assets or rasterizer needed. `initialize()` builds a glyph atlas on
-the GPU.
+Text rendering with two modes: a built-in 5x7 bitmap font and TrueType font
+loading via stb_truetype.
+
+### Built-in bitmap font
+
+No external files needed. `initialize()` builds a glyph atlas on the GPU
+from a hardcoded 5x7 pixel font (ASCII 32–126).
 
 ```cpp
 ion::Font font;
@@ -202,8 +216,31 @@ font.draw(batch, "Hello, world!", ion::Vector2(12.0f, -12.0f), 16.0f,
 ion::Vector2 size = font.measure("Hello, world!", 16.0f);
 ```
 
-`'\n'` inserts a line break. `font.texture()`, `glyphWidth()`, and
-`glyphHeight()` are also exposed.
+### TrueType fonts
+
+Load any `.ttf` file for proportional, anti-aliased text at any size.
+
+```cpp
+ion::Font font;
+font.loadFromFile(&renderer, "assets/arial.ttf", 24.0f);
+
+// Use exactly like the bitmap font — glyphHeight is ignored for TTF fonts
+// (the size from loadFromFile is used):
+font.draw(batch, "Score: 100", ion::Vector2(10.0f, -10.0f), 0.0f,
+          ion::Color::white());
+
+ion::Vector2 size = font.measure("Score: 100", 0.0f);
+```
+
+- `loadFromFile(renderer, path, fontSize)` — `fontSize` is the pixel height of
+  uppercase letters. Returns `false` if the file can't be loaded or parsed.
+- Proportional spacing — each character advances by its natural width.
+- Smooth anti-aliased rendering via stb_truetype.
+- `isTrueType()` returns `true` after a successful TTF load.
+
+Both modes share the same `draw()` and `measure()` API. `'\n'` inserts a
+line break. `font.texture()`, `glyphWidth()`, and `glyphHeight()` are also
+exposed.
 
 ## Example
 

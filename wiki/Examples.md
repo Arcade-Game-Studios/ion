@@ -44,8 +44,56 @@ Press `Escape` to quit.
 
 ## input
 
-`examples/input` — keyboard, mouse, and gamepad input showcase.
+`examples/input` — keyboard, mouse, and gamepad input showcase. Displays
+connected gamepads, axes, buttons, and live keyboard/mouse state. Demonstrates
+the action-map system for binding abstract names to physical inputs.
+
+```sh
+./build/examples/input_example metal
+./build/examples/input_example gl
+```
 
 ## multi_window
 
-`examples/multi_window` — creates and manages multiple windows.
+`examples/multi_window` — creates and manages multiple OS windows. Each window
+gets its own Renderer and render pass. Demonstrates the Null backend's
+multi-window support and per-window resource isolation.
+
+```sh
+./build/examples/multi_window_example metal
+./build/examples/multi_window_example null
+```
+
+## 3d
+
+`examples/3d` — a minimal 3D scene using the `Renderer` and `Camera` APIs.
+Draws a colored cube, pyramid, and checkerboard floor with a free-look camera.
+Demonstrates depth testing, vertex/index buffers, and per-vertex coloring.
+
+```sh
+./build/examples/3d_example metal
+./build/examples/3d_example gl
+```
+
+## model
+
+`examples/model` — loads and displays 3D models from OBJ and glTF files.
+Demonstrates `ion::loadModel` with `ion::Model`, `ion::Material`,
+`ion::Mesh`, and node transforms. Builds a textured cube, pyramid, and
+teapot from the `examples/model/assets/` directory.
+
+```sh
+./build/examples/model_example metal
+./build/examples/model_example gl
+```
+
+## lighting
+
+`examples/lighting` — a dynamic lighting showcase. Renders a sphere, cube,
+and floor with multiple directional and point lights using `ion::Lighting`.
+Demonstrates ambient color, light intensity, and range falloff.
+
+```sh
+./build/examples/lighting_example metal
+./build/examples/lighting_example gl
+```

@@ -43,6 +43,22 @@ Methods:
 - `setFullscreen(bool)` / `isFullscreen()` — fullscreen toggle
 - `nativeHandle()` — raw OS window handle for platform integration
 
+### Resizing
+
+By default the window is resizable. When the user resizes the window, the
+engine reports the new size to `onResize` each frame. To keep your viewport
+in sync, update your camera's viewport from the callback or the start of
+your render loop:
+
+```cpp
+config.onResize = [&](uint32_t w, uint32_t h) {
+    camera.setViewport(w, h);
+};
+```
+
+The `resizable` field in `WindowConfig` controls whether the user can drag the
+window border. Set it to `false` to create a fixed-size window.
+
 ## Input
 
 Input state is polled once per frame through `ion::input`. The engine and
