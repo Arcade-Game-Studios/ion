@@ -24,6 +24,9 @@ if(APPLE)
 
     add_executable(2d_example 2d/main.cpp)
     target_link_libraries(2d_example PRIVATE ion_core ion_platform_macos "-framework Cocoa")
+
+    add_executable(asteroids_example asteroids/main.cpp)
+    target_link_libraries(asteroids_example PRIVATE ion_core ion_platform_macos "-framework Cocoa")
 elseif(WIN32)
     add_executable(basic_example basic/main.cpp)
     target_link_libraries(basic_example PRIVATE ion_core ion_platform_windows)
@@ -36,6 +39,9 @@ elseif(WIN32)
 
     add_executable(2d_example 2d/main.cpp)
     target_link_libraries(2d_example PRIVATE ion_core ion_platform_windows)
+
+    add_executable(asteroids_example asteroids/main.cpp)
+    target_link_libraries(asteroids_example PRIVATE ion_core ion_platform_windows)
 elseif(UNIX)
     add_executable(basic_example basic/main.cpp)
     target_link_libraries(basic_example PRIVATE ion_core ion_platform_linux)
@@ -48,4 +54,7 @@ elseif(UNIX)
 
     add_executable(2d_example 2d/main.cpp)
     target_link_libraries(2d_example PRIVATE ion_core ion_platform_linux)
+
+    add_executable(asteroids_example asteroids/main.cpp)
+    target_link_libraries(asteroids_example PRIVATE ion_core ion_platform_linux)
 endif()

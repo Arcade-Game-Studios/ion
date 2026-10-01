@@ -128,11 +128,11 @@ PHASE 7 - ECS SYSTEM
 PHASE 8 - AUDIO SYSTEM
 ==================================================
 
-[ ] Audio device management
-[ ] Sound effects
-[ ] Music playback
+[x] Audio device management
+[x] Sound effects
+[x] Music playback
 [ ] Spatial audio
-[ ] Audio mixer
+[x] Audio mixer
 
 
 ==================================================

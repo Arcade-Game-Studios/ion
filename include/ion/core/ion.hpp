@@ -22,6 +22,9 @@
 #include <ion/platform/Input.hpp>
 #include <ion/platform/Paths.hpp>
 
+// Audio
+#include <ion/audio/Audio.hpp>
+
 // Rendering
 #include <ion/render/Renderer.hpp>
 #include <ion/render/Color.hpp>

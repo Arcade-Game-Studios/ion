@@ -16,6 +16,8 @@ option(ION_ENABLE_VULKAN "Enable the Vulkan render backend" ON)
 
 add_library(ion_core STATIC
     core/Application.cpp
+    core/Audio.cpp
+    core/AudioMixer.cpp
     core/Camera.cpp
     core/Camera2D.cpp
     core/Config.cpp
@@ -93,6 +95,7 @@ if(APPLE)
         platform/macos/InputImpl.mm
         platform/macos/RenderMetal.mm
         platform/macos/RenderGL.mm
+        platform/macos/AudioImpl.cpp
     )
     set_source_files_properties(
         platform/macos/WindowImpl.mm
@@ -107,6 +110,8 @@ if(APPLE)
         "-framework Cocoa"
         "-framework GameController"
         "-framework CoreHaptics"
+        "-framework AudioToolbox"
+        "-framework CoreAudio"
         "-framework Metal"
         "-framework QuartzCore"
         "-framework OpenGL")
@@ -115,6 +120,7 @@ elseif(WIN32)
         platform/windows/WindowImpl.cpp
         platform/windows/Paths.cpp
         platform/windows/InputImpl.cpp
+        platform/windows/AudioImpl.cpp
     )
     target_include_directories(ion_platform_windows PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 elseif(UNIX)
@@ -122,6 +128,7 @@ elseif(UNIX)
         platform/linux/WindowImpl.cpp
         platform/linux/Paths.cpp
         platform/linux/InputImpl.cpp
+        platform/linux/AudioImpl.cpp
     )
     target_include_directories(ion_platform_linux PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
     find_library(X11_LIBRARY NAMES X11)
@@ -207,6 +214,14 @@ if(ION_BUILD_TESTS)
     add_executable(ecs_test tests/ecs_test.cpp)
     target_link_libraries(ecs_test PRIVATE ion_core)
     add_test(NAME ecs_test COMMAND ecs_test)
+
+    add_executable(audio_test tests/audio_test.cpp)
+    target_link_libraries(audio_test PRIVATE ion_core)
+    add_test(NAME audio_test COMMAND audio_test)
+
+    add_executable(asteroids_test tests/asteroids_test.cpp)
+    target_link_libraries(asteroids_test PRIVATE ion_core)
+    add_test(NAME asteroids_test COMMAND asteroids_test)
 endif()
 
 include(GNUInstallDirs)

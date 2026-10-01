@@ -37,7 +37,8 @@ public:
     void shutdown();
     bool isInitialized() const;
 
-    // Draws text at position (top-left of first glyph). glyphHeight
+    // Draws text with position at the bottom-left of the first glyph (the
+    // baseline for TTF fonts); +y is up, and extra lines go downward. glyphHeight
     // controls the scale for bitmap fonts; for TTF fonts it's ignored
     // (the size from loadFromFile is used).
     void draw(SpriteBatch& batch, const std::string& text,
