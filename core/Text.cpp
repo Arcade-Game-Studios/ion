@@ -490,7 +490,8 @@ void Font::draw(SpriteBatch& batch, const std::string& text,
 
                 batch.drawSprite(
                     region,
-                    Vector2(cursorX + g.xoff, cursorY + g.yoff),
+                    Vector2(cursorX + g.xoff,
+                            cursorY - (g.yoff + (float)g.height)),
                     Vector2((float)g.width, (float)g.height),
                     0.0f, {0.0f, 0.0f}, color);
             }
