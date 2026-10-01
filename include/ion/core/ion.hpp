@@ -60,4 +60,5 @@
 // ECS
 #include <ion/ecs/Entity.hpp>
 #include <ion/ecs/Component.hpp>
+#include <ion/ecs/Registry.hpp>
 #include <ion/ecs/System.hpp>

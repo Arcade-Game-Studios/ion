@@ -116,9 +116,9 @@ PHASE 6 - 3D RENDERING
 PHASE 7 - ECS SYSTEM
 ==================================================
 
-[ ] Entity system
-[ ] Components
-[ ] Systems
+[x] Entity system
+[x] Components
+[x] Systems
 [ ] Scene management
 [ ] Serialization
 [ ] Prefab system

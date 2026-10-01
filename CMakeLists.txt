@@ -203,6 +203,10 @@ if(ION_BUILD_TESTS)
         target_link_libraries(model_test PRIVATE ion_platform_linux)
     endif()
     add_test(NAME model_test COMMAND model_test)
+
+    add_executable(ecs_test tests/ecs_test.cpp)
+    target_link_libraries(ecs_test PRIVATE ion_core)
+    add_test(NAME ecs_test COMMAND ecs_test)
 endif()
 
 include(GNUInstallDirs)
