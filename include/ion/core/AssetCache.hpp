@@ -48,7 +48,7 @@ public:
             ION_LOG_WARN("AssetCache: failed to load '%s'", path.c_str());
             return nullptr;
         }
-        entries_[path] = Entry{asset, fs::lastWriteTime(path)};
+        entries_[path] = Entry{asset, signature_(path)};
         return asset;
     }
 
@@ -56,7 +56,7 @@ public:
 
     // Inserts an asset that wasn't loaded from disk (generated data).
     void put(const std::string& key, std::shared_ptr<T> asset) {
-        entries_[key] = Entry{std::move(asset), 0};
+        entries_[key] = Entry{std::move(asset), Signature{}};
     }
 
     // Drops the cache's reference; holders keep their copy.
@@ -90,7 +90,7 @@ public:
             return false;
         }
         *it->second.asset = std::move(*fresh);
-        it->second.stamp = fs::lastWriteTime(path);
+        it->second.stamp = signature_(path);
         if (onReload_) {
             onReload_(path, *it->second.asset);
         }
@@ -102,11 +102,11 @@ public:
     std::vector<std::string> reloadChanged() {
         std::vector<std::string> changed;
         for (auto& [path, entry] : entries_) {
-            if (entry.stamp == 0) {
+            if (entry.stamp.time == 0) {
                 continue; // put() entries have no file
             }
-            int64_t stamp = fs::lastWriteTime(path);
-            if (stamp != 0 && stamp != entry.stamp) {
+            Signature stamp = signature_(path);
+            if (stamp.time != 0 && stamp != entry.stamp) {
                 changed.push_back(path);
             }
         }
@@ -115,7 +115,7 @@ public:
             if (reload(path)) {
                 reloaded.push_back(path);
             } else {
-                entries_[path].stamp = fs::lastWriteTime(path); // don't retry every poll
+                entries_[path].stamp = signature_(path); // don't retry every poll
             }
         }
         return reloaded;
@@ -127,9 +127,22 @@ public:
     void clear() { entries_.clear(); }
 
 private:
+    // Modification time plus size: some file systems/runtimes (FAT, MinGW's
+    // std::filesystem) only report whole seconds, so a quick edit can keep
+    // the same timestamp.
+    struct Signature {
+        int64_t time = 0;
+        int64_t size = -1;
+        bool operator!=(const Signature& o) const { return time != o.time || size != o.size; }
+    };
+
+    static Signature signature_(const std::string& path) {
+        return Signature{fs::lastWriteTime(path), fs::fileSize(path)};
+    }
+
     struct Entry {
         std::shared_ptr<T> asset;
-        int64_t stamp = 0;
+        Signature stamp;
     };
 
     Loader loader_;

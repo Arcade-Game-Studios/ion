@@ -54,3 +54,31 @@ jobs:
 
       - name: Test
         run: xvfb-run -a ctest --test-dir build --output-on-failure
+
+  windows-cross:
+    name: Windows (MinGW cross-build, tests under Wine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-mingw-w64-x86-64 libz-mingw-w64-dev wine64
+
+      - name: Configure
+        run: cmake -S . -B build-win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-win --parallel
+
+      - name: Test
+        env:
+          WINEDEBUG: -all
+        run: |
+          WINE=$(command -v wine64 || echo /usr/lib/wine/wine64)
+          for t in math_test core_test input_test render_test 2d_test model_test ecs_test \
+                   audio_test asteroids_test image_test systems_test physics_test terminal_test; do
+            echo "== $t"
+            "$WINE" build-win/$t.exe
+          done

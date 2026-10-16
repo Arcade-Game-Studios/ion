@@ -84,7 +84,20 @@ add_library(ion_core STATIC
 )
 target_include_directories(ion_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(ion_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
-find_package(ZLIB REQUIRED)
+# zlib (PNG decoding/encoding). Use the system copy when there is one;
+# otherwise build it from source (e.g. on Windows, which ships none).
+find_package(ZLIB QUIET)
+if(NOT ZLIB_FOUND)
+    message(STATUS "zlib not found; fetching zlib 1.3.1")
+    include(FetchContent)
+    FetchContent_Declare(zlib
+        URL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+        URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23)
+    set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(zlib)
+    add_library(ZLIB::ZLIB ALIAS zlibstatic)
+    target_include_directories(zlibstatic INTERFACE ${zlib_SOURCE_DIR} ${zlib_BINARY_DIR})
+endif()
 target_link_libraries(ion_core PUBLIC ZLIB::ZLIB Threads::Threads)
 ion_apply_warnings(ion_core)
 target_compile_definitions(ion_core PUBLIC

@@ -36,7 +36,10 @@ void setLogConsole(bool enabled);
 // Prefixes messages with the wall-clock time (HH:MM:SS.mmm). Off by default.
 void setLogTimestamps(bool enabled);
 
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__MINGW32__)
+// MinGW's C++ runtime formats with its ANSI stdio (C99 %zu etc.).
+void log(LogLevel level, const char* fmt, ...) __attribute__((format(gnu_printf, 2, 3)));
+#elif defined(__GNUC__) || defined(__clang__)
 void log(LogLevel level, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 #else
 void log(LogLevel level, const char* fmt, ...);
