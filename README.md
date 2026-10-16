@@ -36,8 +36,8 @@ Ion Engine is a modern, open-source game engine written in C++ with native suppo
 ![OpenGL](images/OpenGL%20logo.png) ![Vulkan](images/Vulkan%20logo.png)
 
 - **Metal** — macOS
-- **OpenGL** — Windows, macOS, Linux
-- **Vulkan** — planned (see [roadmap](todo.md))
+- **OpenGL** — macOS
+- **Vulkan** — Windows, Linux
 
 ## Build
 
@@ -57,6 +57,21 @@ make run       # run the window test
 
 Examples build to `build/examples/basic_example`.
 
+### Tests
+
+```sh
+ctest --test-dir build --output-on-failure        # Linux: prefix with xvfb-run -a for window tests
+cmake -S . -B build-asan -DION_SANITIZE=ON        # AddressSanitizer + UBSan
+```
+
+### Windows from Linux
+
+```sh
+cmake -S . -B build-win -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
+cmake --build build-win
+wine64 build-win/math_test.exe
+```
+
 ## Screenshots
 
 ![2D example](screenshots/2d-example.png)
@@ -72,6 +87,7 @@ Examples build to `build/examples/basic_example`.
 - [Wiki](wiki/README.md)
 - [Documentation](docs/README.md)
 - [Roadmap](todo.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

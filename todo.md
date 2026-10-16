@@ -108,8 +108,8 @@ PHASE 6 - 3D RENDERING
 [ ] Physically based rendering
 [ ] Skyboxes
 [ ] Post-processing effects
-[ ] Collision system
-[ ] Gravity system
+[x] Collision system (2D/3D geometry tests, tilemap and physics collision)
+[x] Gravity system (Physics2D)
 
 
 ==================================================
@@ -119,8 +119,8 @@ PHASE 7 - ECS SYSTEM
 [x] Entity system
 [x] Components
 [x] Systems
-[ ] Scene management
-[ ] Serialization
+[x] Scene management
+[x] Serialization (JSON read/write)
 [ ] Prefab system
 
 
@@ -131,7 +131,7 @@ PHASE 8 - AUDIO SYSTEM
 [x] Audio device management
 [x] Sound effects
 [x] Music playback
-[ ] Spatial audio
+[x] Spatial audio (2D/3D attenuation and panning)
 [x] Audio mixer
 
 
@@ -140,12 +140,12 @@ PHASE 9 - TERMINAL RENDERER
 ==================================================
 
 [ ] Terminal window backend
-[ ] Character rendering
-[ ] ANSI color support
-[ ] Terminal input
-[ ] ASCII sprites
+[x] Character rendering
+[x] ANSI color support
+[x] Terminal input
+[x] ASCII sprites
 [ ] Terminal animations
-[ ] Terminal game support
+[x] Terminal game support (examples/terminal)
 
 
 ==================================================
@@ -158,12 +158,12 @@ PHASE 10 - DEBUG AND DEVELOPMENT TOOLS
 [ ] CPU usage monitor
 [ ] GPU usage monitor
 [ ] VRAM usage monitor
-[ ] Memory usage tracker
+[x] Memory usage tracker
 [x] Draw call counter
 [x] Triangle counter
 [ ] Entity counter
-[ ] Renderer statistics
-[ ] Performance profiler
+[x] Renderer statistics
+[x] Performance profiler
 [ ] Screenshot system
 [ ] Crash reporting
 
@@ -172,13 +172,13 @@ PHASE 10 - DEBUG AND DEVELOPMENT TOOLS
 PHASE 11 - ASSET SYSTEM
 ==================================================
 
-[ ] Asset manager
+[x] Asset manager (AssetCache)
 [ ] Texture loading
 [ ] Shader loading
 [ ] Model loading
 [ ] Audio loading
-[ ] Asset caching
-[ ] Hot reload support
+[x] Asset caching
+[x] Hot reload support
 
 
 ==================================================
@@ -199,7 +199,7 @@ LONG TERM IDEAS
 
 [ ] Networking module
 [ ] Multiplayer support
-[ ] Physics engine integration
+[x] Physics engine integration (built-in 2D physics)
 [ ] Scripting support
 [ ] Plugin system
 [ ] Editor/debug tools

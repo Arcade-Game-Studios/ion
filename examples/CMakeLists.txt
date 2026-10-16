@@ -58,3 +58,7 @@ elseif(UNIX)
     add_executable(asteroids_example asteroids/main.cpp)
     target_link_libraries(asteroids_example PRIVATE ion_core ion_platform_linux)
 endif()
+
+# Terminal Snake: needs no window or GPU, so it builds everywhere.
+add_executable(terminal_example terminal/main.cpp)
+target_link_libraries(terminal_example PRIVATE ion_core)
