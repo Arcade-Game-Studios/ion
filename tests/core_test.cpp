@@ -1,4 +1,5 @@
 #include <ion/core/Config.hpp>
+#include <ion/core/Engine.hpp>
 #include <ion/core/Error.hpp>
 #include <ion/core/Log.hpp>
 #include <ion/core/Memory.hpp>
@@ -8,6 +9,9 @@
 #include <ion/render/Svg.hpp>
 
 #include <chrono>
+#include <cstdint>
+#include <memory>
+#include <string>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -271,6 +275,155 @@ static void testSvgFile() {
     CHECK(!missing.parseFile("/tmp/ion_svg_does_not_exist.svg"));
 }
 
+static void testConfigParsing() {
+    ion::Config config;
+    config.parse("# comment\n"
+                 "; also a comment\n"
+                 "  width = 800  \n"
+                 "title = \"  Padded Title \"\n"
+                 "hex = 0x1F\n"
+                 "leading = 010\n"
+                 "bad = 12abc\n"
+                 "flag = YES\n"
+                 "off = Off\n"
+                 "maybe = sometimes\n"
+                 "[audio]\n"
+                 "volume = 0.25\n"
+                 "[ video ]\n"
+                 "vsync = on\n"
+                 "no equals sign here\n");
+    CHECK(config.getInt("width") == 800);
+    CHECK(config.getString("title") == "  Padded Title ");
+    CHECK(config.getInt("hex") == 31);
+    CHECK(config.getInt("leading") == 10); // decimal, not octal
+    CHECK(config.getInt("bad", -1) == -1); // trailing junk -> default
+    CHECK(config.getFloat("bad", 2.5f) == 2.5f);
+    CHECK(config.getBool("flag") == true);
+    CHECK(config.getBool("off", true) == false);
+    CHECK(config.getBool("maybe", true) == true); // unparsable -> default
+    CHECK(config.getFloat("audio.volume") == 0.25f);
+    CHECK(config.getBool("video.vsync") == true);
+    CHECK(config.size() == 10);
+
+    // Quotes survive a save/load round trip, and floats keep full precision.
+    config.set("pi", 3.14159274f);
+    ion::Config reloaded;
+    reloaded.parse(config.toString());
+    CHECK(reloaded.getString("title") == "  Padded Title ");
+    CHECK(reloaded.getFloat("pi") == 3.14159274f);
+
+    CHECK(config.remove("width"));
+    CHECK(!config.remove("width"));
+    CHECK(!config.has("width"));
+    std::vector<std::string> keys = config.keys();
+    CHECK(!keys.empty() && keys.front() == "audio.volume"); // sorted
+
+    ion::Config overrides;
+    overrides.set("hex", 5);
+    config.merge(overrides);
+    CHECK(config.getInt("hex") == 5);
+    CHECK(!ion::Config().load("/nonexistent/dir/ion.cfg"));
+}
+
+static void testResult() {
+    struct NoDefault {
+        explicit NoDefault(int v) : value(v) {}
+        int value;
+    };
+    ion::Result<NoDefault> ok(NoDefault(3)); // T need not be default-constructible
+    CHECK(ok.ok());
+    CHECK(ok->value == 3);
+    ion::Result<NoDefault> bad(ion::makeError(ion::ErrorCode::IoError, "disk"));
+    CHECK(!bad.ok());
+    CHECK(bad.valueOr(NoDefault(9)).value == 9);
+    CHECK(std::string(ion::errorCodeName(bad.error().code)) == "IoError");
+    // An Error with code None still yields a failed Result.
+    ion::Result<int> weird{ion::Error{}};
+    CHECK(!weird.ok());
+}
+
+static void testMemoryAlignment() {
+    // operator new must return memory aligned for any fundamental type.
+    bool aligned = true;
+    std::vector<std::unique_ptr<long double>> blocks;
+    for (int i = 0; i < 64; i++) {
+        blocks.emplace_back(new long double(i));
+        aligned = aligned &&
+                  (reinterpret_cast<uintptr_t>(blocks.back().get()) %
+                   alignof(std::max_align_t)) == 0;
+    }
+    CHECK(aligned);
+
+    size_t before = ion::Memory::allocatedBytes();
+    ion::Memory::resetPeak();
+    void* p = ion::Memory::allocate(1 << 20);
+    CHECK(ion::Memory::allocationSize(p) == (size_t)1 << 20);
+    CHECK(ion::Memory::peakAllocatedBytes() >= before + (1 << 20));
+    size_t total = ion::Memory::totalAllocationCount();
+    p = ion::Memory::reallocate(p, 16);
+    CHECK(ion::Memory::totalAllocationCount() > total);
+    CHECK(ion::Memory::allocationSize(p) == 16);
+    ion::Memory::free(p);
+    CHECK(ion::Memory::allocationSize(nullptr) == 0);
+}
+
+static void testLogSinks() {
+    std::vector<std::string> captured;
+    ion::setLogCallback([&](ion::LogLevel level, const char* message) {
+        captured.push_back(std::string(ion::logLevelName(level)) + ":" + message);
+    });
+    ion::setLogConsole(false);
+    ion::LogLevel previous = ion::logLevel();
+    ion::setLogLevel(ion::LogLevel::Info);
+
+    const char* path = "/tmp/ion_log_test.txt";
+    std::remove(path);
+    CHECK(ion::setLogFile(path));
+    ION_LOG_DEBUG("hidden %d", 1);
+    ION_LOG_WARN("value=%d", 42);
+    CHECK(ion::setLogFile(""));
+    ion::setLogCallback({});
+    ion::setLogConsole(true);
+    ion::setLogLevel(previous);
+
+    CHECK(captured.size() == 1);
+    CHECK(!captured.empty() && captured[0] == "WARN:value=42");
+    std::FILE* f = std::fopen(path, "r");
+    CHECK(f != nullptr);
+    if (f) {
+        char line[128] = {};
+        CHECK(std::fgets(line, sizeof(line), f) != nullptr);
+        CHECK(std::string(line) == "[WARN] value=42\n");
+        std::fclose(f);
+    }
+    std::remove(path);
+    CHECK(!ion::setLogFile("/nonexistent/dir/log.txt"));
+}
+
+static void testEngineSettings() {
+    // Settings are plain state and work without opening a window.
+    ion::Engine engine;
+    CHECK(!engine.isRunning());
+    CHECK(engine.fixedTimestep() > 0.0f);
+    engine.setFixedTimestep(0.02f);
+    CHECK(engine.fixedTimestep() == 0.02f);
+    CHECK(engine.fixedInterpolation() == 0.0f);
+    engine.setTimeScale(-1.0f);
+    CHECK(engine.timeScale() == 0.0f);
+    engine.setTimeScale(0.5f);
+    CHECK(engine.timeScale() == 0.5f);
+    engine.setTargetFps(144.0f);
+    CHECK(engine.targetFps() == 144.0f);
+    engine.setMaxDeltaTime(0.1f);
+    CHECK(engine.maxDeltaTime() == 0.1f);
+    CHECK(engine.frameCount() == 0);
+    engine.run(); // not initialized: returns immediately
+
+    ion::Engine moved(std::move(engine));
+    CHECK(moved.timeScale() == 0.5f);
+    CHECK(engine.timeScale() == 1.0f); // moved-from reports defaults, no crash
+}
+
 int main() {
     testTimer();
     testConfig();
@@ -285,6 +438,11 @@ int main() {
     testSvgMalformed();
     testSvgRasterizeHelper();
     testSvgFile();
+    testConfigParsing();
+    testResult();
+    testMemoryAlignment();
+    testLogSinks();
+    testEngineSettings();
 
     if (failures == 0) {
         std::printf("All core tests passed\n");

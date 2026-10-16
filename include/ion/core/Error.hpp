@@ -2,6 +2,8 @@
 
 #include <ion/core/Log.hpp>
 
+#include <cassert>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -34,14 +36,37 @@ inline Error makeError(ErrorCode code, std::string message) {
     return Error{code, std::move(message)};
 }
 
+inline const char* errorCodeName(ErrorCode code) {
+    switch (code) {
+        case ErrorCode::None: return "None";
+        case ErrorCode::Unknown: return "Unknown";
+        case ErrorCode::InvalidArgument: return "InvalidArgument";
+        case ErrorCode::NotFound: return "NotFound";
+        case ErrorCode::OutOfMemory: return "OutOfMemory";
+        case ErrorCode::IoError: return "IoError";
+        case ErrorCode::PlatformError: return "PlatformError";
+    }
+    return "Unknown";
+}
+
+//
+// Either a value or an Error. T need not be default-constructible. Calling
+// value() on a failed result is a programming error (asserted in debug).
+//
 template <typename T>
 class Result {
 public:
     Result(T value) : value_(std::move(value)) {}
-    Result(Error error) : error_(std::move(error)) {}
+    Result(Error error) : error_(std::move(error)) {
+        if (error_.ok()) {
+            // A "successful" error carries no value; normalise it so ok()
+            // and value() agree.
+            error_.code = ErrorCode::Unknown;
+        }
+    }
 
     bool ok() const {
-        return error_.ok();
+        return value_.has_value();
     }
 
     explicit operator bool() const {
@@ -49,19 +74,34 @@ public:
     }
 
     T& value() {
-        return value_;
+        assert(ok() && "Result::value() called on an error");
+        return *value_;
     }
 
     const T& value() const {
-        return value_;
+        assert(ok() && "Result::value() called on an error");
+        return *value_;
+    }
+
+    // Returns the value, or fallback when this holds an error.
+    T valueOr(T fallback) const {
+        return ok() ? *value_ : std::move(fallback);
     }
 
     T& operator*() {
-        return value_;
+        return value();
     }
 
     const T& operator*() const {
-        return value_;
+        return value();
+    }
+
+    T* operator->() {
+        return &value();
+    }
+
+    const T* operator->() const {
+        return &value();
     }
 
     const Error& error() const {
@@ -69,7 +109,7 @@ public:
     }
 
 private:
-    T value_;
+    std::optional<T> value_;
     Error error_;
 };
 

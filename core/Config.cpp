@@ -1,7 +1,11 @@
 #include <ion/core/Config.hpp>
 
+#include <cctype>
+#include <cerrno>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
+#include <sstream>
 #include <string>
 
 namespace ion {
@@ -17,45 +21,97 @@ std::string trim(const std::string& text) {
     return text.substr(start, end - start + 1);
 }
 
+std::string lower(std::string text) {
+    for (char& c : text) {
+        c = (char)std::tolower((unsigned char)c);
+    }
+    return text;
+}
+
+std::string unquote(const std::string& value) {
+    if (value.size() >= 2 &&
+        ((value.front() == '"' && value.back() == '"') ||
+         (value.front() == '\'' && value.back() == '\''))) {
+        return value.substr(1, value.size() - 2);
+    }
+    return value;
+}
+
+bool needsQuotes(const std::string& value) {
+    return !value.empty() &&
+           (std::isspace((unsigned char)value.front()) ||
+            std::isspace((unsigned char)value.back()) || value.front() == '"' ||
+            value.front() == '\'');
+}
+
 } // namespace
 
-bool Config::load(const std::string& path) {
-    std::FILE* file = std::fopen(path.c_str(), "r");
-    if (!file) {
-        return false;
-    }
-
-    char line[4096];
-    while (std::fgets(line, sizeof(line), file)) {
-        std::string text = trim(line);
-        if (text.empty() || text[0] == '#' || text[0] == ';') {
+void Config::parse(const std::string& text) {
+    std::istringstream stream(text);
+    std::string line;
+    std::string section;
+    while (std::getline(stream, line)) {
+        std::string t = trim(line);
+        if (t.empty() || t[0] == '#' || t[0] == ';') {
             continue;
         }
-        std::string::size_type eq = text.find('=');
+        if (t.front() == '[' && t.back() == ']') {
+            section = trim(t.substr(1, t.size() - 2));
+            continue;
+        }
+        std::string::size_type eq = t.find('=');
         if (eq == std::string::npos) {
             continue;
         }
-        std::string key = trim(text.substr(0, eq));
-        std::string value = trim(text.substr(eq + 1));
-        if (!key.empty()) {
-            values_[key] = value;
+        std::string key = trim(t.substr(0, eq));
+        std::string value = unquote(trim(t.substr(eq + 1)));
+        if (key.empty()) {
+            continue;
         }
+        values_[section.empty() ? key : section + "." + key] = value;
     }
-
-    std::fclose(file);
-    return true;
 }
 
-bool Config::save(const std::string& path) const {
-    std::FILE* file = std::fopen(path.c_str(), "w");
+bool Config::load(const std::string& path) {
+    std::FILE* file = std::fopen(path.c_str(), "rb");
     if (!file) {
         return false;
     }
-    for (const auto& entry : values_) {
-        std::fprintf(file, "%s=%s\n", entry.first.c_str(), entry.second.c_str());
+    std::string text;
+    char buffer[4096];
+    size_t n;
+    while ((n = std::fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        text.append(buffer, n);
     }
     std::fclose(file);
+    parse(text);
     return true;
+}
+
+std::string Config::toString() const {
+    std::string out;
+    for (const auto& entry : values_) {
+        out += entry.first;
+        out += '=';
+        if (needsQuotes(entry.second)) {
+            out += '"' + entry.second + '"';
+        } else {
+            out += entry.second;
+        }
+        out += '\n';
+    }
+    return out;
+}
+
+bool Config::save(const std::string& path) const {
+    std::FILE* file = std::fopen(path.c_str(), "wb");
+    if (!file) {
+        return false;
+    }
+    std::string text = toString();
+    bool ok = std::fwrite(text.data(), 1, text.size(), file) == text.size();
+    ok = (std::fclose(file) == 0) && ok;
+    return ok;
 }
 
 std::string Config::getString(const std::string& key,
@@ -66,12 +122,36 @@ std::string Config::getString(const std::string& key,
 
 int Config::getInt(const std::string& key, int defaultValue) const {
     auto it = values_.find(key);
-    return it != values_.end() ? std::atoi(it->second.c_str()) : defaultValue;
+    if (it == values_.end() || it->second.empty()) {
+        return defaultValue;
+    }
+    const char* begin = it->second.c_str();
+    char* end = nullptr;
+    errno = 0;
+    // Decimal, plus an explicit 0x prefix for hex. (Base 0 would also treat
+    // a leading zero as octal, turning "010" into 8.)
+    const char* digits = begin + (*begin == '-' || *begin == '+' ? 1 : 0);
+    bool hex = digits[0] == '0' && (digits[1] == 'x' || digits[1] == 'X');
+    long value = std::strtol(begin, &end, hex ? 16 : 10);
+    if (end == begin || *end != '\0' || errno == ERANGE || value < INT_MIN ||
+        value > INT_MAX) {
+        return defaultValue;
+    }
+    return (int)value;
 }
 
 float Config::getFloat(const std::string& key, float defaultValue) const {
     auto it = values_.find(key);
-    return it != values_.end() ? std::atof(it->second.c_str()) : defaultValue;
+    if (it == values_.end() || it->second.empty()) {
+        return defaultValue;
+    }
+    const char* begin = it->second.c_str();
+    char* end = nullptr;
+    float value = std::strtof(begin, &end);
+    if (end == begin || *end != '\0') {
+        return defaultValue;
+    }
+    return value;
 }
 
 bool Config::getBool(const std::string& key, bool defaultValue) const {
@@ -79,8 +159,14 @@ bool Config::getBool(const std::string& key, bool defaultValue) const {
     if (it == values_.end()) {
         return defaultValue;
     }
-    const std::string& value = it->second;
-    return value == "1" || value == "true" || value == "True" || value == "yes";
+    std::string value = lower(it->second);
+    if (value == "1" || value == "true" || value == "yes" || value == "on") {
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "no" || value == "off") {
+        return false;
+    }
+    return defaultValue;
 }
 
 void Config::set(const std::string& key, const std::string& value) {
@@ -88,7 +174,7 @@ void Config::set(const std::string& key, const std::string& value) {
 }
 
 void Config::set(const std::string& key, const char* value) {
-    values_[key] = value;
+    values_[key] = value ? value : "";
 }
 
 void Config::set(const std::string& key, int value) {
@@ -97,7 +183,8 @@ void Config::set(const std::string& key, int value) {
 
 void Config::set(const std::string& key, float value) {
     char buffer[64];
-    std::snprintf(buffer, sizeof(buffer), "%g", value);
+    // 9 significant digits round-trip any float exactly.
+    std::snprintf(buffer, sizeof(buffer), "%.9g", value);
     values_[key] = buffer;
 }
 
@@ -109,8 +196,27 @@ bool Config::has(const std::string& key) const {
     return values_.find(key) != values_.end();
 }
 
+bool Config::remove(const std::string& key) {
+    return values_.erase(key) > 0;
+}
+
 void Config::clear() {
     values_.clear();
+}
+
+std::vector<std::string> Config::keys() const {
+    std::vector<std::string> out;
+    out.reserve(values_.size());
+    for (const auto& entry : values_) {
+        out.push_back(entry.first);
+    }
+    return out;
+}
+
+void Config::merge(const Config& other) {
+    for (const auto& entry : other.values_) {
+        values_[entry.first] = entry.second;
+    }
 }
 
 } // namespace ion

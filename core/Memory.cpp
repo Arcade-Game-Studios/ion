@@ -1,5 +1,6 @@
 #include <ion/core/Memory.hpp>
 
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -10,13 +11,25 @@ namespace Memory {
 
 namespace {
 
-constexpr size_t HEADER_SIZE = sizeof(size_t);
+// The header that stores the allocation size must preserve malloc's
+// alignment: operator new has to return memory aligned to
+// __STDCPP_DEFAULT_NEW_ALIGNMENT__ (16 on x86-64 and ARM64), and a bare
+// sizeof(size_t) header would leave every allocation 8-byte aligned.
+constexpr size_t HEADER_SIZE = alignof(std::max_align_t) > sizeof(size_t)
+                                   ? alignof(std::max_align_t)
+                                   : sizeof(size_t);
 
 struct Tracker {
     std::mutex mutex;
     size_t allocations = 0;
     size_t bytes = 0;
+    size_t peakBytes = 0;
+    size_t totalAllocations = 0;
 };
+
+size_t* headerOf(void* ptr) {
+    return reinterpret_cast<size_t*>(static_cast<unsigned char*>(ptr) - HEADER_SIZE);
+}
 
 Tracker& tracker() {
     static Tracker instance;
@@ -26,24 +39,32 @@ Tracker& tracker() {
 } // namespace
 
 void* allocate(size_t size) {
-    size_t* raw = static_cast<size_t*>(std::malloc(size + HEADER_SIZE));
+    if (size > static_cast<size_t>(-1) - HEADER_SIZE) {
+        throw std::bad_alloc();
+    }
+    void* raw = std::malloc(size + HEADER_SIZE);
     if (!raw) {
         throw std::bad_alloc();
     }
-    *raw = size;
+    *static_cast<size_t*>(raw) = size;
     {
         std::lock_guard<std::mutex> guard(tracker().mutex);
-        tracker().allocations++;
-        tracker().bytes += size;
+        Tracker& t = tracker();
+        t.allocations++;
+        t.totalAllocations++;
+        t.bytes += size;
+        if (t.bytes > t.peakBytes) {
+            t.peakBytes = t.bytes;
+        }
     }
-    return raw + 1;
+    return static_cast<unsigned char*>(raw) + HEADER_SIZE;
 }
 
 void free(void* ptr) {
     if (!ptr) {
         return;
     }
-    size_t* raw = static_cast<size_t*>(ptr) - 1;
+    size_t* raw = headerOf(ptr);
     {
         std::lock_guard<std::mutex> guard(tracker().mutex);
         if (tracker().allocations > 0) {
@@ -59,7 +80,7 @@ void free(void* ptr) {
 void* reallocate(void* ptr, size_t size) {
     void* result = allocate(size);
     if (ptr) {
-        size_t oldSize = *(static_cast<size_t*>(ptr) - 1);
+        size_t oldSize = *headerOf(ptr);
         std::memcpy(result, ptr, oldSize < size ? oldSize : size);
         free(ptr);
     }
@@ -74,6 +95,25 @@ size_t allocationCount() {
 size_t allocatedBytes() {
     std::lock_guard<std::mutex> guard(tracker().mutex);
     return tracker().bytes;
+}
+
+size_t peakAllocatedBytes() {
+    std::lock_guard<std::mutex> guard(tracker().mutex);
+    return tracker().peakBytes;
+}
+
+size_t totalAllocationCount() {
+    std::lock_guard<std::mutex> guard(tracker().mutex);
+    return tracker().totalAllocations;
+}
+
+void resetPeak() {
+    std::lock_guard<std::mutex> guard(tracker().mutex);
+    tracker().peakBytes = tracker().bytes;
+}
+
+size_t allocationSize(const void* ptr) {
+    return ptr ? *headerOf(const_cast<void*>(ptr)) : 0;
 }
 
 } // namespace Memory

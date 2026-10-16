@@ -8,12 +8,22 @@ Application::Application() = default;
 Application::~Application() = default;
 
 void Application::initialize() {}
+void Application::fixedUpdate(float) {}
 void Application::update(float) {}
 void Application::render() {}
 void Application::shutdown() {}
 
+Window* Application::window() const {
+    return engine_ ? &engine_->window() : nullptr;
+}
+
 void Application::run() {
     Engine engine(windowConfig_);
+    engine.setFixedTimestep(fixedTimestep_);
+    engine.setTargetFps(targetFps_);
+    engine.setFixedUpdateCallback([this](float fixedDeltaTime) {
+        fixedUpdate(fixedDeltaTime);
+    });
     engine.setFrameCallback([this](float deltaTime) {
         update(deltaTime);
         render();
@@ -24,9 +34,11 @@ void Application::run() {
         return;
     }
 
+    engine_ = &engine;
     initialize();
     engine.run();
     shutdown();
+    engine_ = nullptr;
 }
 
 void Application::quit() {

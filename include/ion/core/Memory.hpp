@@ -28,12 +28,20 @@ inline void* alignDownPtr(void* ptr, size_t alignment) {
 
 namespace Memory {
 
+// Tracked heap allocation. Returned pointers are aligned to
+// alignof(std::max_align_t), like malloc. allocate throws std::bad_alloc.
 void* allocate(size_t size);
 void free(void* ptr);
 void* reallocate(void* ptr, size_t size);
 
-size_t allocationCount();
-size_t allocatedBytes();
+// Size requested for a block returned by allocate (0 for null).
+size_t allocationSize(const void* ptr);
+
+size_t allocationCount();      // live allocations
+size_t allocatedBytes();       // live bytes
+size_t peakAllocatedBytes();   // high-water mark of allocatedBytes()
+size_t totalAllocationCount(); // allocations made since startup
+void resetPeak();              // sets the peak to the current live bytes
 
 } // namespace Memory
 
