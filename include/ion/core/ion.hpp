@@ -59,6 +59,10 @@
 #include <ion/math/Vector3.hpp>
 #include <ion/math/Vector4.hpp>
 #include <ion/math/Matrix4.hpp>
+#include <ion/math/MathUtils.hpp>
+#include <ion/math/Quaternion.hpp>
+#include <ion/math/Geometry.hpp>
+#include <ion/math/Random.hpp>
 
 // ECS
 #include <ion/ecs/Entity.hpp>

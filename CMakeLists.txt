@@ -53,6 +53,7 @@ add_library(ion_core STATIC
     core/Camera2D.cpp
     core/Config.cpp
     core/Engine.cpp
+    core/Geometry.cpp
     core/GltfModel.cpp
     core/Image.cpp
     core/Input.cpp
@@ -218,6 +219,7 @@ if(ION_BUILD_TESTS)
     ion_add_test(ecs_test)
     ion_add_test(audio_test)
     ion_add_test(asteroids_test)
+    ion_add_test(math_test)
 endif()
 
 include(GNUInstallDirs)
