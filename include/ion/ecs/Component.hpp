@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -31,12 +32,26 @@ uint32_t componentTypeIndex() {
     return index;
 }
 
+// Constructs T from args: parentheses when T has a matching constructor,
+// braces otherwise (aggregates such as `struct Position { float x, y; }`).
+// Always using braces would pick initializer_list constructors, so
+// emplace<std::vector<int>>(e, 3, 5) built {3, 5} instead of five 3s.
+template <typename T, typename... Args>
+T makeComponent(Args&&... args) {
+    if constexpr (std::is_constructible_v<T, Args&&...>) {
+        return T(std::forward<Args>(args)...);
+    } else {
+        return T{std::forward<Args>(args)...};
+    }
+}
+
 class PoolBase {
 public:
     virtual ~PoolBase() = default;
     virtual bool contains(uint32_t entityIndex) const = 0;
     virtual void remove(uint32_t entityIndex) = 0;
     virtual size_t size() const = 0;
+    virtual void clear() = 0;
 };
 
 // Sparse-set storage: O(1) add/remove/lookup, components packed contiguously
@@ -51,7 +66,7 @@ public:
     template <typename... Args>
     T& emplace(uint32_t index, EntityId id, Args&&... args) {
         if (contains(index)) {
-            components_[sparse_[index]] = T{std::forward<Args>(args)...};
+            components_[sparse_[index]] = makeComponent<T>(std::forward<Args>(args)...);
             return components_[sparse_[index]];
         }
         if (index >= sparse_.size()) {
@@ -59,7 +74,7 @@ public:
         }
         sparse_[index] = static_cast<uint32_t>(components_.size());
         entities_.push_back(id);
-        components_.emplace_back(T{std::forward<Args>(args)...});
+        components_.emplace_back(makeComponent<T>(std::forward<Args>(args)...));
         return components_.back();
     }
 
@@ -90,9 +105,16 @@ public:
 
     size_t size() const override { return components_.size(); }
 
+    void clear() override {
+        sparse_.clear();
+        entities_.clear();
+        components_.clear();
+    }
+
     // Packed entity ids, parallel to components().
     const std::vector<EntityId>& entities() const { return entities_; }
     std::vector<T>& components() { return components_; }
+    const std::vector<T>& components() const { return components_; }
 
 private:
     static constexpr uint32_t kNone = 0xFFFFFFFFu;

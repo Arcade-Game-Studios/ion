@@ -53,10 +53,12 @@ add_library(ion_core STATIC
     core/Camera2D.cpp
     core/Config.cpp
     core/Engine.cpp
+    core/FileSystem.cpp
     core/Geometry.cpp
     core/GltfModel.cpp
     core/Image.cpp
     core/Input.cpp
+    core/Json.cpp
     core/Light.cpp
     core/Log.cpp
     core/Memory.cpp
@@ -64,15 +66,21 @@ add_library(ion_core STATIC
     core/Model.cpp
     core/ObjModel.cpp
     core/ParticleSystem.cpp
+    core/Physics2D.cpp
     core/PerformanceOverlay.cpp
+    core/Profiler.cpp
     core/Render.cpp
+    core/Scene.cpp
+    core/Scheduler.cpp
     core/Skybox.cpp
     core/SpriteAnimation.cpp
     core/SpriteBatch.cpp
     core/Svg.cpp
+    core/Terminal.cpp
     core/TextureAtlas.cpp
     core/Text.cpp
     core/Tilemap.cpp
+    core/Tween.cpp
 )
 target_include_directories(ion_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(ion_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
@@ -224,6 +232,9 @@ if(ION_BUILD_TESTS)
     ion_add_test(asteroids_test)
     ion_add_test(math_test)
     ion_add_test(image_test)
+    ion_add_test(systems_test)
+    ion_add_test(physics_test)
+    ion_add_test(terminal_test)
     if(UNIX AND NOT APPLE)
         ion_add_test(window_x11_test PLATFORM)
         ion_add_test(audio_device_test PLATFORM)

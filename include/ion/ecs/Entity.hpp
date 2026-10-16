@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 namespace ion {
 
@@ -32,6 +33,15 @@ struct Entity {
 
     friend bool operator==(Entity a, Entity b) { return a.id == b.id; }
     friend bool operator!=(Entity a, Entity b) { return a.id != b.id; }
+    friend bool operator<(Entity a, Entity b) { return a.id < b.id; }
 };
 
 } // namespace ion
+
+// Lets Entity be used as an unordered_map/unordered_set key.
+template <>
+struct std::hash<ion::Entity> {
+    size_t operator()(ion::Entity e) const noexcept {
+        return std::hash<ion::EntityId>()(e.id);
+    }
+};

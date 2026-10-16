@@ -9,12 +9,21 @@
 
 // Core
 #include <ion/core/Application.hpp>
+#include <ion/core/AssetCache.hpp>
 #include <ion/core/Config.hpp>
 #include <ion/core/Engine.hpp>
 #include <ion/core/Error.hpp>
+#include <ion/core/Events.hpp>
+#include <ion/core/FileSystem.hpp>
+#include <ion/core/Json.hpp>
 #include <ion/core/Log.hpp>
 #include <ion/core/Memory.hpp>
+#include <ion/core/ObjectPool.hpp>
+#include <ion/core/Profiler.hpp>
+#include <ion/core/Scheduler.hpp>
+#include <ion/core/StateMachine.hpp>
 #include <ion/core/Timer.hpp>
+#include <ion/core/Tween.hpp>
 #include <ion/core/Version.hpp>
 
 // Platform
@@ -69,3 +78,12 @@
 #include <ion/ecs/Component.hpp>
 #include <ion/ecs/Registry.hpp>
 #include <ion/ecs/System.hpp>
+
+// Scenes
+#include <ion/scene/Scene.hpp>
+
+// Physics
+#include <ion/physics/Physics2D.hpp>
+
+// Terminal
+#include <ion/terminal/Terminal.hpp>
