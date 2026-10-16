@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ion/math/Geometry.hpp>
 #include <ion/math/Vector2.hpp>
 #include <ion/platform/Window.hpp>
 #include <ion/render/Camera2D.hpp>
@@ -7,10 +8,27 @@
 #include <ion/render/SpriteRegion.hpp>
 #include <ion/render/Vertex.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
 namespace ion {
+
+// Mirrors a sprite's texture coordinates (combinable with |).
+enum class SpriteFlip : uint8_t {
+    None = 0,
+    Horizontal = 1,
+    Vertical = 2,
+    Both = 3,
+};
+
+inline constexpr SpriteFlip operator|(SpriteFlip a, SpriteFlip b) {
+    return static_cast<SpriteFlip>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+}
+
+inline constexpr bool hasFlag(SpriteFlip value, SpriteFlip flag) {
+    return (static_cast<uint8_t>(value) & static_cast<uint8_t>(flag)) != 0;
+}
 
 //
 // SpriteBatch renders 2D quads efficiently. Draw calls are accumulated into a
@@ -58,6 +76,11 @@ public:
                     const Vector2& origin = {},
                     const Color& color = Color::white());
 
+    // Same, with the texture mirrored (e.g. a character facing left).
+    void drawSprite(const SpriteRegion& region, const Vector2& position,
+                    const Vector2& size, float rotation, const Vector2& origin,
+                    const Color& color, SpriteFlip flip);
+
     // Draws a region at its native pixel size scaled by scale.
     void drawSprite(const SpriteRegion& region, const Vector2& position,
                     float scale = 1.0f, float rotation = 0.0f,
@@ -65,6 +88,14 @@ public:
 
     void drawRect(const Vector2& position, const Vector2& size,
                   const Color& color);
+    void drawRect(const Rect& rect, const Color& color);
+    void drawTriangle(const Vector2& a, const Vector2& b, const Vector2& c,
+                      const Color& color);
+    // Filled convex polygon (points in order, either winding).
+    void drawPolygon(const Vector2* points, size_t count, const Color& color);
+    // Connected line segments; closed joins the last point to the first.
+    void drawPolyline(const Vector2* points, size_t count, float thickness,
+                      const Color& color, bool closed = false);
     void drawRectOutline(const Vector2& position, const Vector2& size,
                          float thickness, const Color& color);
     void drawLine(const Vector2& from, const Vector2& to, float thickness,

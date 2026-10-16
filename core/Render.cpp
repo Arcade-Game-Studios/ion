@@ -173,7 +173,7 @@ Renderer::Renderer(Renderer&& other) noexcept : impl_(other.impl_) {
 
 Renderer& Renderer::operator=(Renderer&& other) noexcept {
     if (this != &other) {
-        delete impl_;
+        delete impl_; // Impl's destructor shuts the backend down
         impl_ = other.impl_;
         other.impl_ = nullptr;
     }
@@ -432,6 +432,9 @@ void Renderer::setIndexBuffer(const IndexBuffer& buffer) {
 }
 
 void Renderer::setUniform(const char* name, float value) {
+    if (!impl_ || !name) {
+        return;
+    }
     RenderCommand command;
     command.type = RenderCommandType::SetUniformFloat;
     command.uniformName = name;
@@ -440,6 +443,9 @@ void Renderer::setUniform(const char* name, float value) {
 }
 
 void Renderer::setUniform(const char* name, const Vector2& value) {
+    if (!impl_ || !name) {
+        return;
+    }
     RenderCommand command;
     command.type = RenderCommandType::SetUniformVec2;
     command.uniformName = name;
@@ -448,6 +454,9 @@ void Renderer::setUniform(const char* name, const Vector2& value) {
 }
 
 void Renderer::setUniform(const char* name, const Vector3& value) {
+    if (!impl_ || !name) {
+        return;
+    }
     RenderCommand command;
     command.type = RenderCommandType::SetUniformVec3;
     command.uniformName = name;
@@ -456,6 +465,9 @@ void Renderer::setUniform(const char* name, const Vector3& value) {
 }
 
 void Renderer::setUniform(const char* name, const Vector4& value) {
+    if (!impl_ || !name) {
+        return;
+    }
     RenderCommand command;
     command.type = RenderCommandType::SetUniformVec4;
     command.uniformName = name;
@@ -464,6 +476,9 @@ void Renderer::setUniform(const char* name, const Vector4& value) {
 }
 
 void Renderer::setUniform(const char* name, const Matrix4& value) {
+    if (!impl_ || !name) {
+        return;
+    }
     RenderCommand command;
     command.type = RenderCommandType::SetUniformMat4;
     command.uniformName = name;
@@ -473,7 +488,12 @@ void Renderer::setUniform(const char* name, const Matrix4& value) {
 
 void Renderer::setUniform(const char* name, const float* values,
                           uint32_t vec4Count) {
+    if (!impl_ || !name) {
+        return;
+    }
     if (vec4Count > 8) {
+        ION_LOG_WARN("Renderer: uniform array '%s' truncated from %u to 8 vec4s", name,
+                     vec4Count);
         vec4Count = 8;
     }
     RenderCommand command;
@@ -488,6 +508,9 @@ void Renderer::setUniform(const char* name, const float* values,
 }
 
 void Renderer::draw(uint32_t vertexCount) {
+    if (!impl_ || vertexCount == 0) {
+        return;
+    }
     RenderCommand command;
     command.type = RenderCommandType::Draw;
     command.count = vertexCount;
@@ -495,6 +518,9 @@ void Renderer::draw(uint32_t vertexCount) {
 }
 
 void Renderer::drawIndexed(uint32_t indexCount, uint32_t startIndex) {
+    if (!impl_ || indexCount == 0) {
+        return;
+    }
     RenderCommand command;
     command.type = RenderCommandType::DrawIndexed;
     command.count = indexCount;

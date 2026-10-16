@@ -21,6 +21,12 @@ bool TextureAtlas::addRegion(const std::string& name, uint32_t x, uint32_t y,
     if (regions_.count(name) > 0) {
         return false;
     }
+    // Reject regions outside the texture (they would sample garbage UVs).
+    // 64-bit sums avoid overflow for huge coordinates.
+    if ((uint64_t)x + width > texture_.desc.width ||
+        (uint64_t)y + height > texture_.desc.height) {
+        return false;
+    }
     SpriteRegion region;
     region.texture = texture_;
     region.x = x;
@@ -70,6 +76,23 @@ bool TextureAtlas::addGrid(const std::string& namePrefix, uint32_t columns,
 const SpriteRegion* TextureAtlas::find(const std::string& name) const {
     auto it = regions_.find(name);
     return it != regions_.end() ? &it->second : nullptr;
+}
+
+bool TextureAtlas::contains(const std::string& name) const {
+    return regions_.count(name) > 0;
+}
+
+std::vector<SpriteRegion> TextureAtlas::sequence(const std::string& namePrefix,
+                                                 uint32_t first, uint32_t count) const {
+    std::vector<SpriteRegion> frames;
+    for (uint32_t i = 0; i < count; i++) {
+        const SpriteRegion* region = find(namePrefix + "_" + std::to_string(first + i));
+        if (!region) {
+            break;
+        }
+        frames.push_back(*region);
+    }
+    return frames;
 }
 
 const std::vector<std::string>& TextureAtlas::names() const {

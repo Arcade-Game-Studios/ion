@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace ion {
@@ -98,7 +99,7 @@ SpriteBatch::~SpriteBatch() {
 }
 
 SpriteBatch::SpriteBatch(SpriteBatch&& other) noexcept
-    : renderer_(other.renderer_), shader_(other.shader_),
+    : renderer_(other.renderer_), window_(other.window_), shader_(other.shader_),
       whiteTexture_(other.whiteTexture_), whiteRegion_(other.whiteRegion_),
       camera_(other.camera_), activeTexture_(other.activeTexture_),
       vertices_(std::move(other.vertices_)), indices_(std::move(other.indices_)),
@@ -116,6 +117,7 @@ SpriteBatch& SpriteBatch::operator=(SpriteBatch&& other) noexcept {
     if (this != &other) {
         shutdown();
         renderer_ = other.renderer_;
+        window_ = other.window_;
         shader_ = other.shader_;
         whiteTexture_ = other.whiteTexture_;
         whiteRegion_ = other.whiteRegion_;
@@ -222,6 +224,12 @@ bool SpriteBatch::isInitialized() const {
 }
 
 void SpriteBatch::begin(const Camera2D& camera) {
+    if (!initialized_ || !renderer_) {
+        return;
+    }
+    if (begun_) {
+        flush_(); // begin() without end(): don't drop the pending quads
+    }
     for (auto& pair : prevFrameBuffers_) {
         if (pair.first.isValid()) {
             renderer_->destroyVertexBuffer(pair.first);
@@ -256,6 +264,13 @@ void SpriteBatch::end() {
 void SpriteBatch::drawSprite(const SpriteRegion& region, const Vector2& position,
                              const Vector2& size, float rotation,
                              const Vector2& origin, const Color& color) {
+    drawSprite(region, position, size, rotation, origin, color, SpriteFlip::None);
+}
+
+void SpriteBatch::drawSprite(const SpriteRegion& region, const Vector2& position,
+                             const Vector2& size, float rotation,
+                             const Vector2& origin, const Color& color,
+                             SpriteFlip flip) {
     if (!initialized_ || !begun_ || !region.isValid()) {
         return;
     }
@@ -285,10 +300,14 @@ void SpriteBatch::drawSprite(const SpriteRegion& region, const Vector2& position
         }
     }
 
-    Vector2 uv[4] = {{region.u0, region.v1},
-                     {region.u1, region.v1},
-                     {region.u1, region.v0},
-                     {region.u0, region.v0}};
+    float u0 = region.u0, u1 = region.u1, v0 = region.v0, v1 = region.v1;
+    if (hasFlag(flip, SpriteFlip::Horizontal)) {
+        std::swap(u0, u1);
+    }
+    if (hasFlag(flip, SpriteFlip::Vertical)) {
+        std::swap(v0, v1);
+    }
+    Vector2 uv[4] = {{u0, v1}, {u1, v1}, {u1, v0}, {u0, v0}};
     pushQuad_(region, world[0], world[1], world[2], world[3], uv[0], uv[1],
               uv[2], uv[3], color);
 }
@@ -306,6 +325,46 @@ void SpriteBatch::drawSprite(const SpriteRegion& region, const Vector2& position
 void SpriteBatch::drawRect(const Vector2& position, const Vector2& size,
                            const Color& color) {
     drawSprite(whiteRegion_, position, size, 0.0f, {0.0f, 0.0f}, color);
+}
+
+void SpriteBatch::drawRect(const Rect& rect, const Color& color) {
+    drawRect(rect.position(), rect.size(), color);
+}
+
+void SpriteBatch::drawTriangle(const Vector2& a, const Vector2& b, const Vector2& c,
+                               const Color& color) {
+    if (!initialized_ || !begun_) {
+        return;
+    }
+    // A degenerate quad (last two corners equal) renders as one triangle.
+    pushQuad_(whiteRegion_, a, b, c, c, {0.5f, 0.5f}, {0.5f, 0.5f}, {0.5f, 0.5f},
+              {0.5f, 0.5f}, color);
+}
+
+void SpriteBatch::drawPolygon(const Vector2* points, size_t count, const Color& color) {
+    if (!initialized_ || !begun_ || !points || count < 3) {
+        return;
+    }
+    Vector2 center;
+    for (size_t i = 0; i < count; i++) {
+        center += points[i];
+    }
+    center /= (float)count;
+    std::vector<Vector2> ring(points, points + count);
+    pushTriangleFan_(whiteRegion_, center, ring, color);
+}
+
+void SpriteBatch::drawPolyline(const Vector2* points, size_t count, float thickness,
+                               const Color& color, bool closed) {
+    if (!points || count < 2) {
+        return;
+    }
+    for (size_t i = 0; i + 1 < count; i++) {
+        drawLine(points[i], points[i + 1], thickness, color);
+    }
+    if (closed && count > 2) {
+        drawLine(points[count - 1], points[0], thickness, color);
+    }
 }
 
 void SpriteBatch::drawRectOutline(const Vector2& position, const Vector2& size,
@@ -364,6 +423,9 @@ void SpriteBatch::drawCircle(const Vector2& center, float radius,
 void SpriteBatch::drawCircleOutline(const Vector2& center, float radius,
                                     float thickness, const Color& color,
                                     uint32_t segments) {
+    if (!initialized_ || !begun_ || radius <= 0.0f) {
+        return;
+    }
     if (segments < 3) {
         segments = 3;
     }

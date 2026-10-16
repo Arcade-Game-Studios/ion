@@ -49,6 +49,8 @@ struct ParticleEmitterConfig {
     Color endColor = Color::transparent();
     float rotationSpeed = 0.0f;
     float rotationSpeedSpread = 0.0f;
+    // Particles spawn uniformly inside this radius around the emitter.
+    float spawnRadius = 0.0f;
 };
 
 //
@@ -69,6 +71,16 @@ public:
 
     // Spawns count particles immediately.
     void burst(uint32_t count);
+    // Spawns count particles at a position without moving the emitter
+    // (e.g. one emitter shared by every explosion).
+    void burstAt(const Vector2& position, uint32_t count);
+
+    // Simulates `seconds` up front so continuous effects (smoke, rain) are
+    // already in full flow on their first frame.
+    void prewarm(float seconds, float step = 1.0f / 30.0f);
+
+    // Makes the randomness reproducible.
+    void setSeed(uint32_t seed);
 
     // Resumes/stops continuous emission.
     void start();
@@ -81,6 +93,8 @@ public:
     void draw(SpriteBatch& batch);
 
     uint32_t aliveCount() const;
+    // Not emitting and no particles left (safe to remove a one-shot effect).
+    bool isFinished() const;
 
 private:
     void spawn_();

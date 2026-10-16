@@ -8,12 +8,15 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace ion {
 
 //
-// Performance overlay: draws live FPS, frame time, draw call and triangle
-// counts in the top-left corner of the window. The overlay is enabled by
+// Performance overlay: draws live FPS, frame time (and the worst frame of
+// the last second), draw call, triangle and vertex counts and heap usage in
+// the top-left corner of the window, plus any lines added with setLine(). The overlay is enabled by
 // default; the game can disable it with setEnabled(false). It owns its own
 // Font/SpriteBatch, so call render() between renderer.beginFrame() and
 // renderer.endFrame() after the game's own drawing.
@@ -47,6 +50,11 @@ public:
     // Glyph height of the overlay text (default 14 pixels).
     void setFontSize(float glyphHeight);
 
+    // Adds or updates a custom "label: value" line (e.g. entity count).
+    void setLine(const std::string& label, const std::string& value);
+    void removeLine(const std::string& label);
+    void clearLines();
+
     // Draws the overlay using its own sprite batch. Must be called while the
     // renderer is inside a frame (after beginFrame, before endFrame).
     void render();
@@ -62,6 +70,10 @@ private:
     float fontSize_ = 14.0f;
     float lastFrameMs_ = 0.0f;
     float fps_ = 0.0f;
+    float worstFrameMs_ = 0.0f;
+    float windowWorstMs_ = 0.0f;
+    float windowElapsed_ = 0.0f;
+    std::vector<std::pair<std::string, std::string>> extraLines_;
     bool hasPreviousFrame_ = false;
     bool enabled_ = true;
     bool initialized_ = false;

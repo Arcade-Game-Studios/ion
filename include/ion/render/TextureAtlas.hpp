@@ -22,7 +22,8 @@ public:
     void setTexture(const Texture& texture);
 
     // Adds a region at a pixel rect (x, y measured from the top-left).
-    // Returns false if the name is already taken.
+    // Returns false if the name is already taken or the rect does not fit
+    // inside the texture.
     bool addRegion(const std::string& name, uint32_t x, uint32_t y,
                    uint32_t width, uint32_t height);
 
@@ -37,6 +38,13 @@ public:
                  uint32_t rows, uint32_t cellWidth, uint32_t cellHeight);
 
     const SpriteRegion* find(const std::string& name) const;
+    bool contains(const std::string& name) const;
+
+    // Collects "<prefix>_<first>", "<prefix>_<first+1>", ... (as created by
+    // addGrid), stopping at the first missing name. Handy for animations:
+    //   anim.setFrames(atlas.sequence("walk", 0, 8), 0.1f);
+    std::vector<SpriteRegion> sequence(const std::string& namePrefix, uint32_t first,
+                                       uint32_t count) const;
     const std::vector<std::string>& names() const;
     const Texture& texture() const;
     size_t regionCount() const;

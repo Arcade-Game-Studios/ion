@@ -20,11 +20,22 @@ namespace ion {
 //  2. TrueType font: call loadFromFile() with a .ttf path and desired pixel
 //     size. Proportional spacing, smooth rendering via stb_truetype.
 //
-// draw() and measure() work identically in both modes.
+// draw() and measure() work identically in both modes. Tabs advance to the
+// next multiple of four spaces.
 //
+// A Font owns its atlas texture and releases it on destruction; it is
+// move-only. Destroy fonts before their Renderer.
+//
+enum class TextAlign : uint8_t { Left, Center, Right };
+
 class Font {
 public:
     Font() = default;
+    ~Font();
+    Font(Font&& other) noexcept;
+    Font& operator=(Font&& other) noexcept;
+    Font(const Font&) = delete;
+    Font& operator=(const Font&) = delete;
 
     // Built-in 5x7 bitmap font (no external files needed).
     bool initialize(Renderer* renderer);
@@ -49,6 +60,20 @@ public:
     // scales the result; for TTF fonts it's ignored.
     Vector2 measure(const std::string& text, float glyphHeight) const;
 
+    // Draws each line aligned relative to position.x (Left: starts there,
+    // Center: centered on it, Right: ends there).
+    void drawAligned(SpriteBatch& batch, const std::string& text, const Vector2& position,
+                     float glyphHeight, TextAlign align,
+                     const Color& color = Color::white());
+
+    // Inserts line breaks at spaces so no line is wider than maxWidth.
+    // Words longer than maxWidth are kept whole on their own line; existing
+    // newlines are preserved.
+    std::string wrap(const std::string& text, float maxWidth, float glyphHeight) const;
+
+    // Distance between baselines of consecutive lines.
+    float lineHeight(float glyphHeight) const;
+
     Texture texture() const;
     uint32_t glyphWidth() const;
     uint32_t glyphHeight() const;
@@ -56,8 +81,8 @@ public:
     bool isTrueType() const { return trueType_; }
 
 private:
-    bool initTrueTypeAtlas(Renderer* renderer, const uint8_t* ttfData,
-                           float fontSize);
+    bool initTrueTypeAtlas(const uint8_t* ttfData, float fontSize);
+    float advance_(char c, float glyphHeight) const;
 
     Renderer* renderer_ = nullptr;
     Texture atlas_;

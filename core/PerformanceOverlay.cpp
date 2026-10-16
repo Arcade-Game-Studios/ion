@@ -1,8 +1,10 @@
 #include <ion/render/PerformanceOverlay.hpp>
 
+#include <ion/core/Memory.hpp>
 #include <ion/core/Timer.hpp>
 #include <ion/render/Color.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -63,13 +65,48 @@ void PerformanceOverlay::setFontSize(float glyphHeight) {
     }
 }
 
+void PerformanceOverlay::setLine(const std::string& label, const std::string& value) {
+    for (auto& line : extraLines_) {
+        if (line.first == label) {
+            line.second = value;
+            return;
+        }
+    }
+    extraLines_.emplace_back(label, value);
+}
+
+void PerformanceOverlay::removeLine(const std::string& label) {
+    for (size_t i = 0; i < extraLines_.size(); i++) {
+        if (extraLines_[i].first == label) {
+            extraLines_.erase(extraLines_.begin() + (long)i);
+            return;
+        }
+    }
+}
+
+void PerformanceOverlay::clearLines() {
+    extraLines_.clear();
+}
+
 std::string PerformanceOverlay::statsText_() const {
     const RendererStats& stats = renderer_->stats();
-    char buffer[192];
-    std::snprintf(buffer, sizeof(buffer), "FPS: %.0f\nFrame: %.2f ms\n"
-                                          "Draw calls: %u\nTriangles: %u",
-                  fps_, lastFrameMs_, stats.drawCalls, stats.triangles);
-    return buffer;
+    char buffer[320];
+    int n = std::snprintf(buffer, sizeof(buffer),
+                          "FPS: %.0f\nFrame: %.2f ms (worst %.2f)\n"
+                          "Draw calls: %u\nTriangles: %u\nVertices: %u",
+                          fps_, lastFrameMs_, worstFrameMs_, stats.drawCalls,
+                          stats.triangles, stats.vertices);
+    std::string text(buffer, n > 0 ? std::min((size_t)n, sizeof(buffer) - 1) : 0);
+    size_t bytes = Memory::allocatedBytes();
+    if (bytes > 0) { // zero when ION_MEMORY_TRACKING is off
+        std::snprintf(buffer, sizeof(buffer), "\nHeap: %.1f MB (%zu allocs)",
+                      (double)bytes / (1024.0 * 1024.0), Memory::allocationCount());
+        text += buffer;
+    }
+    for (const auto& line : extraLines_) {
+        text += "\n" + line.first + ": " + line.second;
+    }
+    return text;
 }
 
 void PerformanceOverlay::render() {
@@ -77,8 +114,18 @@ void PerformanceOverlay::render() {
         return;
     }
 
-    float deltaTime = frameTimer_.tick();    if (hasPreviousFrame_) {
+    float deltaTime = frameTimer_.tick();
+    if (hasPreviousFrame_) {
         lastFrameMs_ = deltaTime * 1000.0f;
+        // Worst frame over a rolling one-second window: spikes are what
+        // players notice, and averages hide them.
+        windowWorstMs_ = std::max(windowWorstMs_, lastFrameMs_);
+        windowElapsed_ += deltaTime;
+        if (windowElapsed_ >= 1.0f) {
+            worstFrameMs_ = windowWorstMs_;
+            windowWorstMs_ = 0.0f;
+            windowElapsed_ = 0.0f;
+        }
         float instantFps = (deltaTime > 0.0f) ? (1.0f / deltaTime) : 0.0f;
         if (fps_ <= 0.0f) {
             fps_ = instantFps;

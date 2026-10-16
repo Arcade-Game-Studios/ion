@@ -73,8 +73,32 @@ void ParticleEmitter::clear() {
     accumulator_ = 0.0f;
 }
 
+void ParticleEmitter::setSeed(uint32_t seed) {
+    rng_.seed(seed);
+}
+
+bool ParticleEmitter::isFinished() const {
+    return !active_ && aliveCount() == 0;
+}
+
+void ParticleEmitter::burstAt(const Vector2& position, uint32_t count) {
+    Vector2 saved = position_;
+    position_ = position;
+    burst(count);
+    position_ = saved;
+}
+
+void ParticleEmitter::prewarm(float seconds, float step) {
+    if (step <= 0.0f) {
+        return;
+    }
+    for (float t = 0.0f; t < seconds; t += step) {
+        update(step);
+    }
+}
+
 void ParticleEmitter::update(float deltaTime) {
-    if (particles_.empty()) {
+    if (particles_.empty() || deltaTime <= 0.0f) {
         return;
     }
 
@@ -109,7 +133,9 @@ void ParticleEmitter::draw(SpriteBatch& batch) {
         if (!particle.alive) {
             continue;
         }
-        float t = 1.0f - std::min(1.0f, particle.life / particle.maxLife);
+        float t = particle.maxLife > 0.0f
+                      ? 1.0f - std::min(1.0f, particle.life / particle.maxLife)
+                      : 1.0f;
         float size = lerpFloat(particle.startSize, particle.endSize, t);
         if (size <= 0.0f) {
             continue;
@@ -135,32 +161,48 @@ void ParticleEmitter::spawn_() {
     if (particles_.empty()) {
         return;
     }
-    // Reuse a dead slot when possible; otherwise recycle the particle with
+    // Reuse a dead slot, scanning round-robin from where the last search
+    // stopped (amortized O(1) instead of rescanning from the start for every
+    // particle in a burst). If the pool is full, recycle the particle with
     // the least remaining life.
     Particle* target = nullptr;
-    float oldestLife = 1.0e30f;
-    for (auto& particle : particles_) {
-        if (!particle.alive) {
-            target = &particle;
+    size_t count = particles_.size();
+    for (size_t i = 0; i < count; i++) {
+        size_t slot = (nextSlot_ + i) % count;
+        if (!particles_[slot].alive) {
+            target = &particles_[slot];
+            nextSlot_ = (uint32_t)((slot + 1) % count);
             break;
         }
-        if (particle.life < oldestLife) {
-            oldestLife = particle.life;
-            target = &particle;
+    }
+    if (!target) {
+        float oldestLife = 1.0e30f;
+        for (auto& particle : particles_) {
+            if (particle.life < oldestLife) {
+                oldestLife = particle.life;
+                target = &particle;
+            }
         }
     }
     if (!target) {
         return;
     }
 
-    float life = config_.lifetime +
-                 config_.lifetimeSpread * random_();
+    // A tiny floor keeps a spread larger than the lifetime from producing
+    // zero or negative lives (which divided by zero in draw()).
+    float life = std::max(0.001f, config_.lifetime + config_.lifetimeSpread * random_());
     float angle = config_.angle + config_.angleSpread * random_();
     float speed = config_.speed + config_.speedSpread * random_();
     float size = config_.startSize + config_.sizeSpread * random_();
 
     target->alive = true;
     target->position = position_;
+    if (config_.spawnRadius > 0.0f) {
+        // Uniform point in a disc around the emitter.
+        float r = config_.spawnRadius * std::sqrt(std::fabs(random_()));
+        float a = random_() * 3.14159265f;
+        target->position += Vector2(std::cos(a) * r, std::sin(a) * r);
+    }
     target->velocity = Vector2(std::cos(angle) * speed,
                                std::sin(angle) * speed);
     target->rotation = random_() * 6.2831853f;

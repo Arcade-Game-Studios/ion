@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ion/math/Geometry.hpp>
 #include <ion/math/Matrix4.hpp>
 #include <ion/render/Material.hpp>
 #include <ion/render/Mesh.hpp>
@@ -26,7 +27,12 @@ struct Model {
     std::vector<ModelPart> parts;
 
     // Releases all GPU resources owned by the model (meshes and textures).
+    // Textures shared between parts are destroyed once.
     void destroy(Renderer& renderer);
+
+    // World-space bounds of all parts (their transforms applied).
+    AABB bounds() const;
+    uint32_t triangleCount() const;
 };
 
 // Loads a model from disk, dispatching on the file extension:

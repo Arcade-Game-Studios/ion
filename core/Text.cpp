@@ -1,5 +1,7 @@
 #include <ion/render/Text.hpp>
 
+#include <ion/core/Log.hpp>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -223,6 +225,37 @@ constexpr uint8_t kFont5x7[95][kGlyphHeight] = {
 // Built-in bitmap font
 // ---------------------------------------------------------------------------
 
+Font::~Font() {
+    shutdown();
+}
+
+Font::Font(Font&& other) noexcept {
+    *this = std::move(other);
+}
+
+Font& Font::operator=(Font&& other) noexcept {
+    if (this != &other) {
+        shutdown();
+        renderer_ = other.renderer_;
+        atlas_ = other.atlas_;
+        initialized_ = other.initialized_;
+        trueType_ = other.trueType_;
+        glyphs_ = std::move(other.glyphs_);
+        ttFontSize_ = other.ttFontSize_;
+        lineHeight_ = other.lineHeight_;
+        baseline_ = other.baseline_;
+        atlasWidth_ = other.atlasWidth_;
+        atlasHeight_ = other.atlasHeight_;
+        // Leave other empty so it doesn't destroy the moved atlas.
+        other.renderer_ = nullptr;
+        other.atlas_ = Texture();
+        other.initialized_ = false;
+        other.trueType_ = false;
+        other.glyphs_.clear();
+    }
+    return *this;
+}
+
 bool Font::initialize(Renderer* renderer) {
     shutdown();
     if (!renderer) {
@@ -282,20 +315,24 @@ bool Font::loadFromFile(Renderer* renderer, const std::string& path,
 
     std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        std::fprintf(stderr, "Font: cannot open %s\n", path.c_str());
+        ION_LOG_ERROR("Font: cannot open '%s'", path.c_str());
         return false;
     }
 
     auto fileSize = file.tellg();
     file.seekg(0, std::ios::beg);
     std::vector<uint8_t> ttfData((size_t)fileSize);
-    if (!file.read(reinterpret_cast<char*>(ttfData.data()), fileSize)) {
-        std::fprintf(stderr, "Font: failed to read %s\n", path.c_str());
+    if (fileSize <= 0 || !file.read(reinterpret_cast<char*>(ttfData.data()), fileSize)) {
+        ION_LOG_ERROR("Font: failed to read '%s'", path.c_str());
+        return false;
+    }
+    if (fontSize <= 0.0f) {
+        ION_LOG_ERROR("Font: invalid size %.2f for '%s'", fontSize, path.c_str());
         return false;
     }
 
     renderer_ = renderer;
-    bool ok = initTrueTypeAtlas(renderer, ttfData.data(), fontSize);
+    bool ok = initTrueTypeAtlas(ttfData.data(), fontSize);
     if (!ok) {
         shutdown();
         return false;
@@ -303,12 +340,11 @@ bool Font::loadFromFile(Renderer* renderer, const std::string& path,
     return true;
 }
 
-bool Font::initTrueTypeAtlas(Renderer* renderer, const uint8_t* ttfData,
-                             float fontSize) {
+bool Font::initTrueTypeAtlas(const uint8_t* ttfData, float fontSize) {
     stbtt_fontinfo font;
-    if (!stbtt_InitFont(&font, ttfData,
-                        stbtt_GetFontOffsetForIndex(ttfData, 0))) {
-        std::fprintf(stderr, "Font: failed to parse TTF data\n");
+    int offset = stbtt_GetFontOffsetForIndex(ttfData, 0);
+    if (offset < 0 || !stbtt_InitFont(&font, ttfData, offset)) {
+        ION_LOG_ERROR("Font: failed to parse TTF data");
         return false;
     }
 
@@ -474,6 +510,10 @@ void Font::draw(SpriteBatch& batch, const std::string& text,
                 cursorY -= lineHeight_;
                 continue;
             }
+            if (c == '\t') {
+                cursorX += advance_(c, glyphHeight);
+                continue;
+            }
             auto it = glyphs_.find((uint32_t)c);
             if (it == glyphs_.end()) {
                 continue;
@@ -512,6 +552,10 @@ void Font::draw(SpriteBatch& batch, const std::string& text,
             cursorY -= lineHeight;
             continue;
         }
+        if (c == '\t') {
+            cursorX += advance_(c, glyphHeight);
+            continue;
+        }
         int index = c - 32;
         if (index < 0 || index >= 95) {
             continue;
@@ -534,35 +578,32 @@ void Font::draw(SpriteBatch& batch, const std::string& text,
     }
 }
 
+float Font::advance_(char c, float glyphHeight) const {
+    if (c == '\t') {
+        return advance_(' ', glyphHeight) * 4.0f;
+    }
+    if (trueType_) {
+        auto it = glyphs_.find((uint32_t)(unsigned char)c);
+        return it != glyphs_.end() ? it->second.xadvance : 0.0f;
+    }
+    int index = (unsigned char)c - 32;
+    if (index < 0 || index >= 95) {
+        return 0.0f;
+    }
+    return (float)kPitch * (glyphHeight / (float)kGlyphHeight);
+}
+
+float Font::lineHeight(float glyphHeight) const {
+    if (trueType_) {
+        return lineHeight_;
+    }
+    return (float)kCellHeight * (glyphHeight / (float)kGlyphHeight);
+}
+
 Vector2 Font::measure(const std::string& text, float glyphHeight) const {
     if (!initialized_ || text.empty()) {
         return Vector2();
     }
-
-    if (trueType_) {
-        float width = 0.0f;
-        float maxWidth = 0.0f;
-        int lines = 1;
-        for (char c : text) {
-            if (c == '\n') {
-                maxWidth = std::max(maxWidth, width);
-                width = 0.0f;
-                lines++;
-                continue;
-            }
-            auto it = glyphs_.find((uint32_t)c);
-            if (it == glyphs_.end()) {
-                continue;
-            }
-            width += it->second.xadvance;
-        }
-        maxWidth = std::max(maxWidth, width);
-        return Vector2(maxWidth, lineHeight_ * (float)lines);
-    }
-
-    // Bitmap font path.
-    float scale = glyphHeight / (float)kGlyphHeight;
-    float lineHeight = (float)kCellHeight * scale;
     float width = 0.0f;
     float maxWidth = 0.0f;
     int lines = 1;
@@ -573,14 +614,77 @@ Vector2 Font::measure(const std::string& text, float glyphHeight) const {
             lines++;
             continue;
         }
-        int index = c - 32;
-        if (index < 0 || index >= 95) {
-            continue;
-        }
-        width += (float)kPitch * scale;
+        width += advance_(c, glyphHeight);
     }
     maxWidth = std::max(maxWidth, width);
-    return Vector2(maxWidth, lineHeight * (float)lines);
+    return Vector2(maxWidth, lineHeight(glyphHeight) * (float)lines);
+}
+
+void Font::drawAligned(SpriteBatch& batch, const std::string& text, const Vector2& position,
+                       float glyphHeight, TextAlign align, const Color& color) {
+    if (align == TextAlign::Left) {
+        draw(batch, text, position, glyphHeight, color);
+        return;
+    }
+    float y = position.y;
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t end = text.find('\n', start);
+        std::string line = text.substr(start, end == std::string::npos ? std::string::npos
+                                                                        : end - start);
+        float w = measure(line, glyphHeight).x;
+        float x = align == TextAlign::Center ? position.x - w * 0.5f : position.x - w;
+        draw(batch, line, Vector2(x, y), glyphHeight, color);
+        y -= lineHeight(glyphHeight);
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+}
+
+std::string Font::wrap(const std::string& text, float maxWidth, float glyphHeight) const {
+    if (!initialized_ || maxWidth <= 0.0f) {
+        return text;
+    }
+    std::string out;
+    float spaceWidth = advance_(' ', glyphHeight);
+    size_t lineStart = 0;
+    while (lineStart <= text.size()) {
+        size_t lineEnd = text.find('\n', lineStart);
+        std::string line = text.substr(
+            lineStart, lineEnd == std::string::npos ? std::string::npos : lineEnd - lineStart);
+        float width = 0.0f;
+        bool firstWord = true;
+        size_t pos = 0;
+        while (pos < line.size()) {
+            size_t wordEnd = line.find(' ', pos);
+            if (wordEnd == std::string::npos) {
+                wordEnd = line.size();
+            }
+            std::string word = line.substr(pos, wordEnd - pos);
+            float wordWidth = measure(word, glyphHeight).x;
+            if (!firstWord && width + spaceWidth + wordWidth > maxWidth) {
+                out += '\n';
+                width = 0.0f;
+                firstWord = true;
+            }
+            if (!firstWord) {
+                out += ' ';
+                width += spaceWidth;
+            }
+            out += word;
+            width += wordWidth;
+            firstWord = false;
+            pos = wordEnd + 1;
+        }
+        if (lineEnd == std::string::npos) {
+            break;
+        }
+        out += '\n';
+        lineStart = lineEnd + 1;
+    }
+    return out;
 }
 
 Texture Font::texture() const {
