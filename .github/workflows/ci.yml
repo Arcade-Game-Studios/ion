@@ -19,7 +19,7 @@ jobs:
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev zlib1g-dev linux-libc-dev
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev zlib1g-dev linux-libc-dev xvfb
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -29,8 +29,13 @@ jobs:
 
       # Windows is build-only for now: several tests write to /tmp.
       - name: Test
-        if: runner.os != 'Windows'
+        if: runner.os == 'macOS'
         run: ctest --test-dir build -C Release --output-on-failure
+
+      # Xvfb gives window_x11_test a display to drive.
+      - name: Test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a ctest --test-dir build -C Release --output-on-failure
 
   sanitize:
     name: Sanitizers (Linux)
@@ -39,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev zlib1g-dev linux-libc-dev
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev zlib1g-dev linux-libc-dev xvfb
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DION_SANITIZE=ON -DION_BUILD_EXAMPLES=OFF
@@ -48,4 +53,4 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: xvfb-run -a ctest --test-dir build --output-on-failure

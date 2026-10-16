@@ -7,6 +7,7 @@
 
 #include <cstring>
 #include <mutex>
+#include <string>
 
 namespace ion {
 
@@ -86,6 +87,65 @@ Key keyFromKeysym(KeySym keysym) {
     }
 }
 
+// <X11/X.h> defines Button4/Button5 as macros, so MouseButton::Button4 can't
+// be spelled here; derive the side buttons from their position after Middle.
+MouseButton sideMouseButton(bool forward) {
+    return static_cast<MouseButton>(static_cast<int>(MouseButton::Middle) + (forward ? 2 : 1));
+}
+
+// Unicode code point for a keysym produced by XLookupString (0 if none).
+uint32_t keysymToCodepoint(KeySym keysym) {
+    if ((keysym >= 0x20 && keysym <= 0x7E) || (keysym >= 0xA0 && keysym <= 0xFF)) {
+        return (uint32_t)keysym; // Latin-1 keysyms equal their code points
+    }
+    if ((keysym & 0xFF000000) == 0x01000000) {
+        return (uint32_t)(keysym & 0x00FFFFFF); // direct Unicode keysyms
+    }
+    switch (keysym) {
+    case XK_KP_Space: return ' ';
+    case XK_KP_Equal: return '=';
+    case XK_KP_Multiply: return '*';
+    case XK_KP_Add: return '+';
+    case XK_KP_Subtract: return '-';
+    case XK_KP_Decimal: return '.';
+    case XK_KP_Divide: return '/';
+    default: break;
+    }
+    if (keysym >= XK_KP_0 && keysym <= XK_KP_9) {
+        return (uint32_t)('0' + (keysym - XK_KP_0));
+    }
+    return 0;
+}
+
+void setSizeHints(Display* display, ::Window window, const WindowConfig& config) {
+    XSizeHints* hints = XAllocSizeHints();
+    if (!hints) {
+        return;
+    }
+    if (config.resizable) {
+        hints->flags = PMinSize;
+        hints->min_width = 1;
+        hints->min_height = 1;
+    } else {
+        // Equal min and max is how X11 window managers lock the size.
+        hints->flags = PMinSize | PMaxSize;
+        hints->min_width = hints->max_width = (int)config.width;
+        hints->min_height = hints->max_height = (int)config.height;
+    }
+    XSetWMNormalHints(display, window, hints);
+    XFree(hints);
+}
+
+// Sets both the legacy WM_NAME and the UTF-8 _NET_WM_NAME so non-ASCII
+// titles display correctly under modern window managers.
+void applyTitle(Display* display, ::Window window, const std::string& title) {
+    XStoreName(display, window, title.c_str());
+    Atom netWmName = XInternAtom(display, "_NET_WM_NAME", False);
+    Atom utf8 = XInternAtom(display, "UTF8_STRING", False);
+    XChangeProperty(display, window, netWmName, utf8, 8, PropModeReplace,
+                    reinterpret_cast<const unsigned char*>(title.c_str()), (int)title.size());
+}
+
 std::mutex g_xInitMutex;
 int g_xInitRefs = 0;
 
@@ -161,7 +221,7 @@ bool Window::create() {
     XSetWindowAttributes attrs = {};
     attrs.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask |
                        KeyReleaseMask | ButtonPressMask | ButtonReleaseMask |
-                       PointerMotionMask;
+                       PointerMotionMask | FocusChangeMask;
 
     unsigned long valueMask = CWEventMask;
     int width = (int)impl->config.width;
@@ -175,21 +235,22 @@ bool Window::create() {
         return false;
     }
 
-    XStoreName(display, xw, impl->config.title.c_str());
+    applyTitle(display, xw, impl->config.title);
+
+    // Lets taskbars and window rules identify and group the game's windows.
+    XClassHint* classHint = XAllocClassHint();
+    if (classHint) {
+        std::string appName = impl->config.appName.empty() ? "ion" : impl->config.appName;
+        classHint->res_name = const_cast<char*>(appName.c_str());
+        classHint->res_class = const_cast<char*>(appName.c_str());
+        XSetClassHint(display, xw, classHint);
+        XFree(classHint);
+    }
 
     Atom wmDelete = XInternAtom(display, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(display, xw, &wmDelete, 1);
 
-    if (impl->config.resizable) {
-        XSizeHints* sizeHints = XAllocSizeHints();
-        if (sizeHints) {
-            sizeHints->flags = PMinSize;
-            sizeHints->min_width = width;
-            sizeHints->min_height = height;
-            XSetWMNormalHints(display, xw, sizeHints);
-            XFree(sizeHints);
-        }
-    }
+    setSizeHints(display, xw, impl->config);
 
     XMapWindow(display, xw);
     XFlush(display);
@@ -248,17 +309,37 @@ void Window::pollEvents() {
         XEvent event;
         XNextEvent(impl->display, &event);
         switch (event.type) {
-        case ConfigureNotify:
-            impl->config.width = (uint32_t)event.xconfigure.width;
-            impl->config.height = (uint32_t)event.xconfigure.height;
-            if (impl->config.onResize) {
-                impl->config.onResize(impl->config.width, impl->config.height);
+        case ConfigureNotify: {
+            // Also sent for moves and restacking; only report real resizes.
+            uint32_t w = (uint32_t)event.xconfigure.width;
+            uint32_t h = (uint32_t)event.xconfigure.height;
+            if (w == impl->config.width && h == impl->config.height) {
+                break;
             }
+            impl->config.width = w;
+            impl->config.height = h;
+            if (impl->config.onResize) {
+                impl->config.onResize(w, h);
+            }
+            break;
+        }
+        case FocusOut:
+            input::platformReleaseAll();
             break;
         case KeyPress: {
             Key key = keyFromKeysym(XLookupKeysym(&event.xkey, 0));
             if (key != Key::Unknown) {
                 input::platformKeyDown(key);
+            }
+            // Shift/layout-aware text. Ctrl/Alt chords are shortcuts.
+            if (!(event.xkey.state & (ControlMask | Mod1Mask))) {
+                char text[32];
+                KeySym typed = NoSymbol;
+                XLookupString(&event.xkey, text, sizeof(text), &typed, nullptr);
+                uint32_t codepoint = keysymToCodepoint(typed);
+                if (codepoint != 0) {
+                    input::platformTextInput(codepoint);
+                }
             }
             break;
         }
@@ -305,6 +386,14 @@ void Window::pollEvents() {
             case 7:
                 if (down) input::platformMouseScroll(1.0f, 0.0f);
                 break;
+            case 8: // "back" side button
+                if (down) input::platformMouseDown(sideMouseButton(false));
+                else input::platformMouseUp(sideMouseButton(false));
+                break;
+            case 9: // "forward" side button
+                if (down) input::platformMouseDown(sideMouseButton(true));
+                else input::platformMouseUp(sideMouseButton(true));
+                break;
             default:
                 break;
             }
@@ -344,9 +433,28 @@ void* Window::nativeDisplay() {
     return impl ? (void*)impl->display : nullptr;
 }
 
+void Window::setTitle(const std::string& title) {
+    if (!impl) {
+        return;
+    }
+    impl->config.title = title;
+    if (impl->display && impl->window) {
+        applyTitle(impl->display, impl->window, title);
+        XFlush(impl->display);
+    }
+}
+
+const std::string& Window::title() const {
+    static const std::string empty;
+    return impl ? impl->config.title : empty;
+}
+
 void Window::setFullscreen(bool fullscreen) {
-    if (!impl || !impl->display || !impl->window) {
-        impl->config.fullscreen = fullscreen;
+    if (!impl) {
+        return;
+    }
+    if (!impl->display || !impl->window) {
+        impl->config.fullscreen = fullscreen; // applied by create()
         return;
     }
     impl->config.fullscreen = fullscreen;

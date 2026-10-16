@@ -164,6 +164,7 @@ elseif(WIN32)
     # The platform layer calls back into ion_core (input hooks) and ion_core
     # calls into the platform layer (Window), so each side lists the other.
     target_link_libraries(ion_platform_windows PUBLIC ion_core)
+    target_link_libraries(ion_platform_windows PUBLIC xinput)
     set(ION_PLATFORM_TARGET ion_platform_windows)
     ion_apply_warnings(ion_platform_windows)
 elseif(UNIX)
@@ -220,6 +221,9 @@ if(ION_BUILD_TESTS)
     ion_add_test(audio_test)
     ion_add_test(asteroids_test)
     ion_add_test(math_test)
+    if(UNIX AND NOT APPLE)
+        ion_add_test(window_x11_test PLATFORM)
+    endif()
 endif()
 
 include(GNUInstallDirs)

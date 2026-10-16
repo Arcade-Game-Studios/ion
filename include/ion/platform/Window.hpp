@@ -39,6 +39,10 @@ public:
     uint32_t width() const;
     uint32_t height() const;
 
+    // Title shown in the title bar (UTF-8). Can be changed at any time.
+    void setTitle(const std::string& title);
+    const std::string& title() const;
+
     void setFullscreen(bool fullscreen);
     bool isFullscreen() const;
 
@@ -49,9 +53,12 @@ public:
     // applicable.
     void* nativeDisplay();
 
+    // Platform-specific state; defined by each backend. Public only so the
+    // backends' free functions (window procedures, delegates) can name it.
+    struct Impl;
+
 private:
-    class Impl;
     Impl* impl = nullptr;
 };
 
-}
+} // namespace ion

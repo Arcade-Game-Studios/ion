@@ -7,6 +7,8 @@
 #include <windows.h>
 #include <windowsx.h>
 
+#include <string>
+
 namespace ion {
 
 namespace {
@@ -85,13 +87,61 @@ MouseButton mouseButtonFromWParam(WPARAM wParam) {
     }
 }
 
+// UTF-8 -> UTF-16 for Win32 "W" APIs.
+std::wstring widen(const std::string& text) {
+    if (text.empty()) {
+        return std::wstring();
+    }
+    int count = MultiByteToWideChar(CP_UTF8, 0, text.data(), (int)text.size(), nullptr, 0);
+    std::wstring out((size_t)count, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), (int)text.size(), &out[0], count);
+    return out;
+}
+
+// WM_KEYDOWN reports generic VK_SHIFT/VK_CONTROL/VK_MENU; resolve the side
+// from the scan code / extended-key bit so LeftShift etc. register.
+Key keyFromMessage(WPARAM wParam, LPARAM lParam) {
+    unsigned int vk = (unsigned int)wParam;
+    bool extended = (lParam & (1 << 24)) != 0;
+    switch (vk) {
+    case VK_SHIFT: {
+        UINT scancode = (UINT)((lParam >> 16) & 0xFF);
+        vk = MapVirtualKeyW(scancode, MAPVK_VSC_TO_VK_EX);
+        break;
+    }
+    case VK_CONTROL: vk = extended ? VK_RCONTROL : VK_LCONTROL; break;
+    case VK_MENU: vk = extended ? VK_RMENU : VK_LMENU; break;
+    case VK_RETURN:
+        if (extended) {
+            return Key::KeypadEnter;
+        }
+        break;
+    default: break;
+    }
+    return keyFromVirtualKey(vk);
+}
+
+DWORD windowStyle(const WindowConfig& config) {
+    DWORD style = WS_OVERLAPPEDWINDOW;
+    if (!config.resizable) {
+        style &= ~WS_MAXIMIZEBOX;
+        style &= ~WS_THICKFRAME;
+    }
+    return style;
+}
+
+} // namespace
+
 struct Window::Impl {
     HWND hwnd = nullptr;
     bool open = false;
     bool fullscreen = false;
     WINDOWPLACEMENT savedPlacement = {};
     WindowConfig config;
+    wchar_t pendingHighSurrogate = 0;
 };
+
+namespace {
 
 Window::Impl* implFromHandle(HWND hwnd) {
     return reinterpret_cast<Window::Impl*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -108,7 +158,9 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
     case WM_SIZE: {
-        if (!impl) {
+        // Minimizing reports a 0x0 client area; keep the last real size so
+        // renderers never see a zero-sized surface.
+        if (!impl || wParam == SIZE_MINIMIZED) {
             break;
         }
         impl->config.width = (uint32_t)LOWORD(lParam);
@@ -120,20 +172,51 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
-        Key key = keyFromVirtualKey((unsigned int)wParam);
+        Key key = keyFromMessage(wParam, lParam);
         if (key != Key::Unknown) {
             input::platformKeyDown(key);
+        }
+        // System keys must reach DefWindowProc or Alt+F4 stops working.
+        if (msg == WM_SYSKEYDOWN) {
+            break;
         }
         return 0;
     }
     case WM_KEYUP:
     case WM_SYSKEYUP: {
-        Key key = keyFromVirtualKey((unsigned int)wParam);
+        Key key = keyFromMessage(wParam, lParam);
         if (key != Key::Unknown) {
             input::platformKeyUp(key);
         }
+        if (msg == WM_SYSKEYUP) {
+            break;
+        }
         return 0;
     }
+    case WM_CHAR: {
+        // UTF-16 code units; combine surrogate pairs.
+        wchar_t unit = (wchar_t)wParam;
+        if (unit >= 0xD800 && unit <= 0xDBFF) {
+            if (impl) {
+                impl->pendingHighSurrogate = unit;
+            }
+            return 0;
+        }
+        uint32_t codepoint = unit;
+        if (unit >= 0xDC00 && unit <= 0xDFFF) {
+            if (!impl || !impl->pendingHighSurrogate) {
+                return 0;
+            }
+            codepoint = 0x10000 + (((uint32_t)impl->pendingHighSurrogate - 0xD800) << 10) +
+                        ((uint32_t)unit - 0xDC00);
+            impl->pendingHighSurrogate = 0;
+        }
+        input::platformTextInput(codepoint);
+        return 0;
+    }
+    case WM_KILLFOCUS:
+        input::platformReleaseAll();
+        return 0;
     case WM_LBUTTONDOWN:
         input::platformMouseDown(MouseButton::Left);
         return 0;
@@ -226,7 +309,8 @@ bool Window::create() {
         wc.style = CS_HREDRAW | CS_VREDRAW;
         wc.lpfnWndProc = windowProc;
         wc.hInstance = hInstance;
-        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        // IDC_ARROW is a narrow MAKEINTRESOURCE unless UNICODE is defined.
+        wc.hCursor = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
         wc.lpszClassName = className;
         if (!RegisterClassExW(&wc)) {
             return false;
@@ -236,20 +320,16 @@ bool Window::create() {
 
     int width = (int)impl->config.width;
     int height = (int)impl->config.height;
-    DWORD style = WS_OVERLAPPEDWINDOW;
-    if (!impl->config.resizable) {
-        style &= ~WS_MAXIMIZEBOX;
-        style &= ~WS_THICKFRAME;
-    }
+    DWORD style = windowStyle(impl->config);
     RECT rect = {0, 0, width, height};
     AdjustWindowRectEx(&rect, style, FALSE, 0);
 
     HWND hwnd = CreateWindowExW(
         0, className,
-        std::wstring(impl->config.title.begin(), impl->config.title.end()).c_str(),
+        widen(impl->config.title).c_str(),
         style, CW_USEDEFAULT, CW_USEDEFAULT,
         rect.right - rect.left, rect.bottom - rect.top,
-        nullptr, nullptr, hInstance, impl.get());
+        nullptr, nullptr, hInstance, impl);
 
     if (!hwnd) {
         return false;
@@ -327,8 +407,26 @@ void* Window::nativeDisplay() {
     return (void*)GetModuleHandleW(nullptr);
 }
 
+void Window::setTitle(const std::string& title) {
+    if (!impl) {
+        return;
+    }
+    impl->config.title = title;
+    if (impl->hwnd) {
+        SetWindowTextW(impl->hwnd, widen(title).c_str());
+    }
+}
+
+const std::string& Window::title() const {
+    static const std::string empty;
+    return impl ? impl->config.title : empty;
+}
+
 void Window::setFullscreen(bool fullscreen) {
-    if (!impl || !impl->hwnd) {
+    if (!impl) {
+        return;
+    }
+    if (!impl->hwnd) {
         impl->config.fullscreen = fullscreen;
         return;
     }
@@ -347,7 +445,8 @@ void Window::setFullscreen(bool fullscreen) {
             impl->fullscreen = true;
         }
     } else if (!fullscreen && impl->fullscreen) {
-        SetWindowLongPtrW(impl->hwnd, GWL_STYLE, (LONG_PTR)WS_OVERLAPPEDWINDOW);
+        SetWindowLongPtrW(impl->hwnd, GWL_STYLE,
+                          (LONG_PTR)(windowStyle(impl->config) | WS_VISIBLE));
         SetWindowPlacement(impl->hwnd, &impl->savedPlacement);
         SetWindowPos(impl->hwnd, HWND_TOP, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER |

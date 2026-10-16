@@ -1,5 +1,7 @@
 #include <ion/platform/Input.hpp>
 
+#include <cctype>
+#include <cmath>
 #include <cstring>
 
 namespace ion {
@@ -29,6 +31,26 @@ float g_prevMouseX = 0.0f;
 float g_prevMouseY = 0.0f;
 float g_scrollX = 0.0f;
 float g_scrollY = 0.0f;
+bool g_anyKeyPressed = false;
+std::string g_textInput;
+
+void appendUtf8(std::string& out, uint32_t cp) {
+    if (cp < 0x80) {
+        out.push_back((char)cp);
+    } else if (cp < 0x800) {
+        out.push_back((char)(0xC0 | (cp >> 6)));
+        out.push_back((char)(0x80 | (cp & 0x3F)));
+    } else if (cp < 0x10000) {
+        out.push_back((char)(0xE0 | (cp >> 12)));
+        out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back((char)(0x80 | (cp & 0x3F)));
+    } else if (cp < 0x110000) {
+        out.push_back((char)(0xF0 | (cp >> 18)));
+        out.push_back((char)(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back((char)(0x80 | (cp & 0x3F)));
+    }
+}
 
 int keyIndex(Key key) {
     int index = static_cast<int>(key);
@@ -80,6 +102,23 @@ const char* keyName(Key key) {
     return names[index];
 }
 
+Key keyFromName(const std::string& name) {
+    auto lower = [](std::string text) {
+        for (char& c : text) {
+            c = (char)std::tolower((unsigned char)c);
+        }
+        return text;
+    };
+    std::string wanted = lower(name);
+    for (int i = 1; i < KEY_COUNT; ++i) {
+        Key key = static_cast<Key>(i);
+        if (lower(keyName(key)) == wanted) {
+            return key;
+        }
+    }
+    return Key::Unknown;
+}
+
 const char* mouseButtonName(MouseButton button) {
     static const char* names[] = {
         "None", "Left", "Right", "Middle", "Button4", "Button5",
@@ -128,6 +167,47 @@ void update() {
     g_prevMouseY = g_mouseY;
     g_scrollX = 0.0f;
     g_scrollY = 0.0f;
+    g_anyKeyPressed = false;
+    g_textInput.clear();
+}
+
+bool isAnyKeyPressed() {
+    return g_anyKeyPressed;
+}
+
+const std::string& textInput() {
+    return g_textInput;
+}
+
+Vector2 mousePosition() {
+    return Vector2(g_mouseX, g_mouseY);
+}
+
+Vector2 mouseDelta() {
+    return Vector2(g_mouseX - g_prevMouseX, g_mouseY - g_prevMouseY);
+}
+
+Vector2 gamepadStick(int index, bool left, float deadZone) {
+    Vector2 v(gamepadAxis(index, left ? GamepadAxis::LeftX : GamepadAxis::RightX),
+              gamepadAxis(index, left ? GamepadAxis::LeftY : GamepadAxis::RightY));
+    float len = v.length();
+    if (len <= deadZone || len <= 0.0f) {
+        return Vector2();
+    }
+    float scaled = (len - deadZone) / (1.0f - deadZone);
+    if (scaled > 1.0f) {
+        scaled = 1.0f;
+    }
+    return v * (scaled / len);
+}
+
+int firstConnectedGamepad() {
+    for (int i = 0; i < MAX_GAMEPADS; ++i) {
+        if (g_gamepadConnected[i]) {
+            return i;
+        }
+    }
+    return -1;
 }
 
 bool isKeyDown(Key key) {
@@ -235,6 +315,7 @@ void platformKeyDown(Key key) {
     if (!state.down) {
         state.down = true;
         state.pressed = true;
+        g_anyKeyPressed = true;
     }
 }
 
@@ -284,9 +365,47 @@ void platformMouseScroll(float x, float y) {
     g_scrollY += y;
 }
 
+void platformTextInput(uint32_t codepoint) {
+    // Skip control characters (backspace, enter, escape...): those are
+    // handled through key events.
+    if (codepoint < 0x20 || codepoint == 0x7F) {
+        return;
+    }
+    appendUtf8(g_textInput, codepoint);
+}
+
+void platformReleaseAll() {
+    for (int i = 0; i < KEY_COUNT; ++i) {
+        if (g_keyStates[i].down) {
+            g_keyStates[i].down = false;
+            g_keyStates[i].released = true;
+        }
+    }
+    for (int i = 0; i < MOUSE_COUNT; ++i) {
+        if (g_mouseStates[i].down) {
+            g_mouseStates[i].down = false;
+            g_mouseStates[i].released = true;
+        }
+    }
+}
+
 void platformGamepadConnected(int index, bool connected) {
     if (index < 0 || index >= MAX_GAMEPADS) {
         return;
+    }
+    if (g_gamepadConnected[index] && !connected) {
+        // Unplugged: release held buttons and center the axes so nothing
+        // keeps firing from stale state.
+        for (int b = 0; b < GAMEPAD_BUTTON_COUNT; ++b) {
+            ButtonState& state = g_gamepadStates[index][b];
+            if (state.down) {
+                state.down = false;
+                state.released = true;
+            }
+        }
+        for (int a = 0; a < GAMEPAD_AXIS_COUNT; ++a) {
+            g_gamepadAxes[index][a] = 0.0f;
+        }
     }
     g_gamepadConnected[index] = connected;
 }
@@ -340,6 +459,25 @@ void ActionMap::bind(const std::string& action, MouseButton button) {
     binding.buttons.push_back(button);
 }
 
+void ActionMap::bind(const std::string& action, GamepadButton button, int gamepad) {
+    Binding& binding = bindings_[action];
+    for (const PadButton& bound : binding.padButtons) {
+        if (bound.button == button && bound.gamepad == gamepad) {
+            return;
+        }
+    }
+    binding.padButtons.push_back({button, gamepad});
+}
+
+void ActionMap::bindAxis(const std::string& action, GamepadAxis axis, float scale,
+                         int gamepad) {
+    bindings_[action].padAxes.push_back({axis, scale, gamepad});
+}
+
+void ActionMap::bindKeys(const std::string& action, Key negative, Key positive) {
+    bindings_[action].keyPairs.push_back({negative, positive});
+}
+
 void ActionMap::unbind(const std::string& action) {
     bindings_.erase(action);
 }
@@ -352,18 +490,65 @@ bool ActionMap::hasAction(const std::string& action) const {
     return bindings_.count(action) > 0;
 }
 
+namespace {
+
+// Applies `test` to the bound pad, or to every pad when gamepad == -1.
+template <typename Fn>
+bool anyPad(int gamepad, Fn&& test) {
+    if (gamepad >= 0) {
+        return test(gamepad);
+    }
+    for (int i = 0; i < MAX_GAMEPADS; ++i) {
+        if (g_gamepadConnected[i] && test(i)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+float ActionMap::axisValue_(const PadAxis& axis) const {
+    float best = 0.0f;
+    auto consider = [&](int pad) {
+        float v = gamepadAxis(pad, axis.axis) * axis.scale;
+        if (std::fabs(v) > std::fabs(best)) {
+            best = v;
+        }
+        return false;
+    };
+    anyPad(axis.gamepad, consider);
+    return best;
+}
+
 bool ActionMap::isDown(const std::string& action) const {
     auto it = bindings_.find(action);
     if (it == bindings_.end()) {
         return false;
     }
-    for (Key key : it->second.keys) {
+    const Binding& b = it->second;
+    for (Key key : b.keys) {
         if (isKeyDown(key)) {
             return true;
         }
     }
-    for (MouseButton button : it->second.buttons) {
+    for (MouseButton button : b.buttons) {
         if (isMouseDown(button)) {
+            return true;
+        }
+    }
+    for (const PadButton& pb : b.padButtons) {
+        if (anyPad(pb.gamepad, [&](int pad) { return isGamepadDown(pad, pb.button); })) {
+            return true;
+        }
+    }
+    for (const PadAxis& axis : b.padAxes) {
+        if (std::fabs(axisValue_(axis)) > threshold_) {
+            return true;
+        }
+    }
+    for (const KeyPair& pair : b.keyPairs) {
+        if (isKeyDown(pair.negative) || isKeyDown(pair.positive)) {
             return true;
         }
     }
@@ -375,13 +560,24 @@ bool ActionMap::isPressed(const std::string& action) const {
     if (it == bindings_.end()) {
         return false;
     }
-    for (Key key : it->second.keys) {
+    const Binding& b = it->second;
+    for (Key key : b.keys) {
         if (isKeyPressed(key)) {
             return true;
         }
     }
-    for (MouseButton button : it->second.buttons) {
+    for (MouseButton button : b.buttons) {
         if (isMousePressed(button)) {
+            return true;
+        }
+    }
+    for (const PadButton& pb : b.padButtons) {
+        if (anyPad(pb.gamepad, [&](int pad) { return isGamepadPressed(pad, pb.button); })) {
+            return true;
+        }
+    }
+    for (const KeyPair& pair : b.keyPairs) {
+        if (isKeyPressed(pair.negative) || isKeyPressed(pair.positive)) {
             return true;
         }
     }
@@ -393,17 +589,71 @@ bool ActionMap::isReleased(const std::string& action) const {
     if (it == bindings_.end()) {
         return false;
     }
-    for (Key key : it->second.keys) {
+    const Binding& b = it->second;
+    for (Key key : b.keys) {
         if (isKeyReleased(key)) {
             return true;
         }
     }
-    for (MouseButton button : it->second.buttons) {
+    for (MouseButton button : b.buttons) {
         if (isMouseReleased(button)) {
             return true;
         }
     }
+    for (const PadButton& pb : b.padButtons) {
+        if (anyPad(pb.gamepad, [&](int pad) { return isGamepadReleased(pad, pb.button); })) {
+            return true;
+        }
+    }
+    for (const KeyPair& pair : b.keyPairs) {
+        if (isKeyReleased(pair.negative) || isKeyReleased(pair.positive)) {
+            return true;
+        }
+    }
     return false;
+}
+
+float ActionMap::value(const std::string& action) const {
+    auto it = bindings_.find(action);
+    if (it == bindings_.end()) {
+        return 0.0f;
+    }
+    const Binding& b = it->second;
+    float best = 0.0f;
+    auto consider = [&](float v) {
+        if (std::fabs(v) > std::fabs(best)) {
+            best = v;
+        }
+    };
+    for (const PadAxis& axis : b.padAxes) {
+        consider(axisValue_(axis));
+    }
+    for (const KeyPair& pair : b.keyPairs) {
+        consider((isKeyDown(pair.positive) ? 1.0f : 0.0f) -
+                 (isKeyDown(pair.negative) ? 1.0f : 0.0f));
+    }
+    if (best == 0.0f) {
+        bool digital = false;
+        for (Key key : b.keys) {
+            digital = digital || isKeyDown(key);
+        }
+        for (MouseButton button : b.buttons) {
+            digital = digital || isMouseDown(button);
+        }
+        for (const PadButton& pb : b.padButtons) {
+            digital = digital ||
+                      anyPad(pb.gamepad, [&](int pad) { return isGamepadDown(pad, pb.button); });
+        }
+        if (digital) {
+            best = 1.0f;
+        }
+    }
+    if (best > 1.0f) {
+        best = 1.0f;
+    } else if (best < -1.0f) {
+        best = -1.0f;
+    }
+    return best;
 }
 
 } // namespace input

@@ -1,5 +1,6 @@
 #include <ion/platform/Input.hpp>
 
+#include <cmath>
 #include <cstdio>
 
 namespace {
@@ -173,6 +174,124 @@ void testActionMap() {
     input::update();
 }
 
+void testKeyNamesRoundTrip() {
+    using namespace ion;
+    for (int i = 1; i < static_cast<int>(Key::Count); ++i) {
+        Key key = static_cast<Key>(i);
+        CHECK(keyFromName(keyName(key)) == key);
+    }
+    CHECK(keyFromName("space") == Key::Space);
+    CHECK(keyFromName("LEFTSHIFT") == Key::LeftShift);
+    CHECK(keyFromName("not a key") == Key::Unknown);
+    CHECK(keyFromName("") == Key::Unknown);
+}
+
+void testTextInputAndRelease() {
+    using namespace ion;
+    input::update();
+    input::platformTextInput('h');
+    input::platformTextInput('i');
+    input::platformTextInput(0x08);    // backspace: control chars are dropped
+    input::platformTextInput(0xE9);    // e-acute
+    input::platformTextInput(0x1F600); // emoji (4-byte UTF-8)
+    CHECK(input::textInput() == "hi\xC3\xA9\xF0\x9F\x98\x80");
+    input::update();
+    CHECK(input::textInput().empty());
+
+    CHECK(!input::isAnyKeyPressed());
+    input::platformKeyDown(Key::W);
+    input::platformMouseDown(MouseButton::Left);
+    CHECK(input::isAnyKeyPressed());
+    input::update();
+    CHECK(!input::isAnyKeyPressed()); // edge only
+    input::platformReleaseAll();
+    CHECK(!input::isKeyDown(Key::W));
+    CHECK(input::isKeyReleased(Key::W));
+    CHECK(!input::isMouseDown(MouseButton::Left));
+    CHECK(input::isMouseReleased(MouseButton::Left));
+    input::update();
+
+    input::platformMouseMove(10.0f, 20.0f);
+    input::update();
+    input::platformMouseMove(13.0f, 16.0f);
+    CHECK(input::mousePosition() == Vector2(13.0f, 16.0f));
+    CHECK(input::mouseDelta() == Vector2(3.0f, -4.0f));
+    input::update();
+}
+
+void testGamepadExtras() {
+    using namespace ion;
+    input::update();
+    CHECK(input::firstConnectedGamepad() == -1 || input::isGamepadConnected(0));
+    input::platformGamepadConnected(2, true);
+    CHECK(input::firstConnectedGamepad() == 2 || input::firstConnectedGamepad() < 2);
+
+    // Radial dead zone.
+    input::platformGamepadAxis(2, GamepadAxis::LeftX, 0.1f);
+    input::platformGamepadAxis(2, GamepadAxis::LeftY, 0.0f);
+    CHECK(input::gamepadStick(2, true).isZero());
+    input::platformGamepadAxis(2, GamepadAxis::LeftX, 1.0f);
+    Vector2 full = input::gamepadStick(2, true);
+    CHECK(std::fabs(full.x - 1.0f) < 1e-5f && full.y == 0.0f);
+    input::platformGamepadAxis(2, GamepadAxis::LeftX, 0.575f); // halfway past 0.15
+    CHECK(std::fabs(input::gamepadStick(2, true).x - 0.5f) < 1e-4f);
+    input::platformGamepadAxis(2, GamepadAxis::LeftX, 0.0f);
+    input::platformGamepadAxis(2, GamepadAxis::LeftY, -0.8f);
+    CHECK(input::gamepadStick(2, true).y < 0.0f);
+
+    // Unplugging releases buttons and centers axes.
+    input::platformGamepadButton(2, GamepadButton::A, true);
+    input::update();
+    input::platformGamepadConnected(2, false);
+    CHECK(!input::isGamepadDown(2, GamepadButton::A));
+    CHECK(input::isGamepadReleased(2, GamepadButton::A));
+    CHECK(input::gamepadAxis(2, GamepadAxis::LeftY) == 0.0f);
+    input::update();
+}
+
+void testActionMapGamepadAndAxes() {
+    using namespace ion;
+    input::update();
+    input::ActionMap map;
+    map.bind("jump", GamepadButton::A);            // any pad
+    map.bind("pause", GamepadButton::Start, 1);    // pad 1 only
+    map.bindAxis("move_x", GamepadAxis::LeftX, 1.0f, 3); // earlier tests leave pad 0 deflected
+    map.bindKeys("move_x", Key::A, Key::D);
+    map.bindAxis("brake", GamepadAxis::TriggerLeft, 1.0f, 3);
+
+    input::platformGamepadConnected(3, true);
+    input::platformGamepadButton(3, GamepadButton::A, true);
+    CHECK(map.isDown("jump"));
+    CHECK(map.isPressed("jump"));
+    CHECK(map.value("jump") == 1.0f);
+    input::platformGamepadButton(3, GamepadButton::Start, true);
+    CHECK(!map.isDown("pause")); // bound to pad 1, not 3
+
+    CHECK(map.value("move_x") == 0.0f);
+    input::platformKeyDown(Key::A);
+    CHECK(map.value("move_x") == -1.0f);
+    CHECK(map.isDown("move_x"));
+    input::platformKeyDown(Key::D);
+    CHECK(map.value("move_x") == 0.0f); // both held cancel out
+    input::platformKeyUp(Key::A);
+    input::platformKeyUp(Key::D);
+    input::platformGamepadAxis(3, GamepadAxis::LeftX, -0.3f);
+    CHECK(std::fabs(map.value("move_x") + 0.3f) < 1e-6f);
+    CHECK(!map.isDown("move_x")); // below the 0.5 press threshold
+    map.setPressThreshold(0.2f);
+    CHECK(map.isDown("move_x"));
+
+    input::platformGamepadAxis(3, GamepadAxis::TriggerLeft, 0.9f);
+    CHECK(std::fabs(map.value("brake") - 0.9f) < 1e-6f);
+
+    input::update();
+    input::platformGamepadButton(3, GamepadButton::A, false);
+    CHECK(map.isReleased("jump"));
+    input::platformGamepadConnected(3, false);
+    CHECK(map.value("move_x") == 0.0f);
+    input::update();
+}
+
 } // namespace
 
 int main() {
@@ -181,6 +300,10 @@ int main() {
     testGamepad();
     testNames();
     testActionMap();
+    testKeyNamesRoundTrip();
+    testTextInputAndRelease();
+    testGamepadExtras();
+    testActionMapGamepadAndAxes();
 
     if (failures == 0) {
         std::printf("input_test: all checks passed\n");

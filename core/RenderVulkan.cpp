@@ -21,6 +21,14 @@
 #include <X11/Xlib.h>
 #include <vulkan/vulkan_xlib.h>
 #elif defined(_WIN32)
+// vulkan_win32.h uses HWND/HINSTANCE but doesn't include <windows.h>.
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #include <vulkan/vulkan_win32.h>
 #endif
 

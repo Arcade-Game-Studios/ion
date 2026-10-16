@@ -4,8 +4,11 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-#include <Xinput.h>
+#include <xinput.h> // lowercase: MinGW headers live on case-sensitive file systems
+// Linked through CMake (xinput); the pragma covers MSVC builds without it.
+#ifdef _MSC_VER
 #pragma comment(lib, "Xinput.lib")
+#endif
 
 #include <algorithm>
 

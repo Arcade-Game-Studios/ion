@@ -47,6 +47,7 @@ struct Window::Impl {
     NSWindow* window = nil;
     NSMenu* mainMenu = nil;
     id resizeObserver = nil;
+    id focusObserver = nil;
     NSEventModifierFlags lastModifiers = 0;
     WindowConfig config;
     bool open = false;
@@ -332,6 +333,16 @@ bool Window::create() {
                         }
                     }];
 
+        // Releasing keys on focus loss stops them sticking when the key-up
+        // event goes to another application.
+        impl->focusObserver = [[NSNotificationCenter defaultCenter]
+            addObserverForName:NSWindowDidResignKeyNotification
+                        object:window
+                         queue:nil
+                    usingBlock:^(NSNotification*) {
+                        input::platformReleaseAll();
+                    }];
+
         impl->window = window;
         impl->app = app;
         impl->open = true;
@@ -359,6 +370,10 @@ void Window::destroy() {
         if (impl->resizeObserver) {
             [[NSNotificationCenter defaultCenter] removeObserver:impl->resizeObserver];
             impl->resizeObserver = nil;
+        }
+        if (impl->focusObserver) {
+            [[NSNotificationCenter defaultCenter] removeObserver:impl->focusObserver];
+            impl->focusObserver = nil;
         }
         if (impl->window) {
             [impl->window close];
@@ -398,9 +413,27 @@ void Window::pollEvents() {
             [impl->app sendEvent:event];
 
             switch (event.type) {
-            case NSEventTypeKeyDown:
+            case NSEventTypeKeyDown: {
                 input::platformKeyDown(keyFromVirtualCode(event.keyCode));
+                // Typed text, skipping Command shortcuts and the private-use
+                // range AppKit uses for arrow/function keys.
+                if (!(event.modifierFlags & NSEventModifierFlagCommand)) {
+                    NSString* chars = event.characters;
+                    NSUInteger length = chars.length;
+                    for (NSUInteger i = 0; i < length; i++) {
+                        uint32_t unit = [chars characterAtIndex:i];
+                        if (unit >= 0xD800 && unit <= 0xDBFF && i + 1 < length) {
+                            uint32_t low = [chars characterAtIndex:i + 1];
+                            unit = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+                            i++;
+                        }
+                        if (unit < 0xF700 || unit > 0xF8FF) {
+                            input::platformTextInput(unit);
+                        }
+                    }
+                }
                 break;
+            }
             case NSEventTypeKeyUp:
                 input::platformKeyUp(keyFromVirtualCode(event.keyCode));
                 break;
@@ -498,16 +531,43 @@ void* Window::nativeDisplay() {
     return nullptr;
 }
 
+void Window::setTitle(const std::string& title) {
+    if (!impl) {
+        return;
+    }
+    impl->config.title = title;
+    if (impl->window) {
+        @autoreleasepool {
+            NSString* text = [NSString stringWithUTF8String:title.c_str()];
+            if (text) { // nil for invalid UTF-8
+                [impl->window setTitle:text];
+            }
+        }
+    }
+}
+
+const std::string& Window::title() const {
+    static const std::string empty;
+    return impl ? impl->config.title : empty;
+}
+
 void Window::setFullscreen(bool fullscreen) {
-    if (!impl || !impl->window) {
+    if (!impl) {
+        return;
+    }
+    if (!impl->window) {
+        impl->config.fullscreen = fullscreen; // applied by create()
         return;
     }
     @autoreleasepool {
-        if (impl->config.fullscreen == fullscreen) {
-            return;
-        }
         impl->config.fullscreen = fullscreen;
-        [impl->window toggleFullScreen:nil];
+        // Compare with the window's real state: create() calls this with
+        // config.fullscreen already true, so comparing against the config
+        // flag skipped the toggle and launch-in-fullscreen never happened.
+        bool current = ([impl->window styleMask] & NSWindowStyleMaskFullScreen) != 0;
+        if (current != fullscreen) {
+            [impl->window toggleFullScreen:nil];
+        }
     }
 }
 

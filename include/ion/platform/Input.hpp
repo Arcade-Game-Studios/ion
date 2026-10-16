@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ion/math/Vector2.hpp>
+
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -55,6 +57,9 @@ enum class GamepadAxis {
 
 // Returns a human-readable name for debug/UI purposes.
 const char* keyName(Key key);
+// Inverse of keyName (case-insensitive); Key::Unknown if unrecognised.
+// Useful for loading key bindings from a Config file.
+Key keyFromName(const std::string& name);
 const char* mouseButtonName(MouseButton button);
 const char* gamepadButtonName(GamepadButton button);
 const char* gamepadAxisName(GamepadAxis axis);
@@ -69,6 +74,12 @@ void update();
 bool isKeyDown(Key key);
 bool isKeyPressed(Key key);
 bool isKeyReleased(Key key);
+// True if any key went down this frame.
+bool isAnyKeyPressed();
+
+// Text typed this frame as UTF-8 (respects keyboard layout and shift).
+// Use for text fields; use isKeyPressed for game controls.
+const std::string& textInput();
 
 // --- Mouse --------------------------------------------------------------
 bool isMouseDown(MouseButton button);
@@ -81,13 +92,21 @@ float mouseDeltaX();
 float mouseDeltaY();
 float mouseScrollX();
 float mouseScrollY();
+Vector2 mousePosition();
+Vector2 mouseDelta();
 
 // --- Gamepad ------------------------------------------------------------
 bool isGamepadConnected(int index);
 bool isGamepadDown(int index, GamepadButton button);
 bool isGamepadPressed(int index, GamepadButton button);
 bool isGamepadReleased(int index, GamepadButton button);
-float gamepadAxis(int index, GamepadAxis axis); // sticks -1..1, triggers 0..1
+float gamepadAxis(int index, GamepadAxis axis); // sticks -1..1 (+y up), triggers 0..1
+// Stick as a vector with a radial dead zone: magnitudes below deadZone read
+// as zero and the rest is rescaled to 0..1, so small drift is ignored
+// without a jump at the dead-zone edge.
+Vector2 gamepadStick(int index, bool left, float deadZone = 0.15f);
+// Index of the first connected gamepad, or -1.
+int firstConnectedGamepad();
 void gamepadVibrate(int index, float leftMotor, float rightMotor); // 0..1
 
 // --- Platform hooks (called by platform backends) -----------------------
@@ -97,6 +116,11 @@ void platformMouseDown(MouseButton button);
 void platformMouseUp(MouseButton button);
 void platformMouseMove(float x, float y);
 void platformMouseScroll(float x, float y);
+// Appends a typed Unicode code point to this frame's textInput().
+void platformTextInput(uint32_t codepoint);
+// Releases every held key and mouse button (e.g. on focus loss), producing
+// released() edges, so nothing stays stuck down.
+void platformReleaseAll();
 void platformGamepadConnected(int index, bool connected);
 void platformGamepadButton(int index, GamepadButton button, bool down);
 void platformGamepadAxis(int index, GamepadAxis axis, float value);
@@ -105,11 +129,25 @@ void platformGamepadAxis(int index, GamepadAxis axis, float value);
 void pollGamepads();
 
 // --- Input mapping system ------------------------------------------------
-// Maps abstract action names to keys and mouse buttons.
+// Maps abstract action names to keys, mouse buttons and gamepad inputs.
+//
+//   actions.bind("jump", Key::Space);
+//   actions.bind("jump", GamepadButton::A);          // any connected pad
+//   actions.bindAxis("move_x", GamepadAxis::LeftX);
+//   actions.bindKeys("move_x", Key::A, Key::D);      // -1 / +1
+//   float dx = actions.value("move_x");
 class ActionMap {
 public:
     void bind(const std::string& action, Key key);
     void bind(const std::string& action, MouseButton button);
+    // gamepad -1 means any connected gamepad.
+    void bind(const std::string& action, GamepadButton button, int gamepad = -1);
+    // Analog binding contributing axis * scale to value(). isDown() treats
+    // |axis value| above the press threshold as held.
+    void bindAxis(const std::string& action, GamepadAxis axis, float scale = 1.0f,
+                  int gamepad = -1);
+    // Digital axis: negative key contributes -1, positive key +1.
+    void bindKeys(const std::string& action, Key negative, Key positive);
     void unbind(const std::string& action);
     void clear();
 
@@ -118,12 +156,37 @@ public:
     bool isPressed(const std::string& action) const;
     bool isReleased(const std::string& action) const;
 
+    // Analog value in -1..1: the largest-magnitude contribution among the
+    // axis and key-pair bindings, or 1 when a digital binding is held.
+    float value(const std::string& action) const;
+
+    // Threshold above which an analog binding counts as "down" (default 0.5).
+    void setPressThreshold(float threshold) { threshold_ = threshold; }
+
 private:
+    struct PadButton {
+        GamepadButton button;
+        int gamepad;
+    };
+    struct PadAxis {
+        GamepadAxis axis;
+        float scale;
+        int gamepad;
+    };
+    struct KeyPair {
+        Key negative;
+        Key positive;
+    };
     struct Binding {
         std::vector<Key> keys;
         std::vector<MouseButton> buttons;
+        std::vector<PadButton> padButtons;
+        std::vector<PadAxis> padAxes;
+        std::vector<KeyPair> keyPairs;
     };
+    float axisValue_(const PadAxis& axis) const;
     std::unordered_map<std::string, Binding> bindings_;
+    float threshold_ = 0.5f;
 };
 
 } // namespace input
