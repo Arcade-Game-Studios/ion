@@ -60,6 +60,10 @@
 #include <ion/math/Vector4.hpp>
 #include <ion/math/Matrix4.hpp>
 
+// Physics
+#include <ion/physics/Collision.hpp>
+#include <ion/physics/PhysicsWorld.hpp>
+
 // ECS
 #include <ion/ecs/Entity.hpp>
 #include <ion/ecs/Component.hpp>

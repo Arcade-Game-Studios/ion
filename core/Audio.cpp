@@ -22,4 +22,13 @@ void Audio::shutdown() {
     mixer_.stopAll();
 }
 
+VoiceId Audio::playMusic(const std::string& path, float volume, bool loop) {
+    auto stream = openStream(path);
+    if (!stream) {
+        return INVALID_VOICE;
+    }
+    return mixer_.playStream(std::move(stream),
+                             {.volume = volume, .loop = loop, .bus = AudioBus::Music});
+}
+
 } // namespace ion

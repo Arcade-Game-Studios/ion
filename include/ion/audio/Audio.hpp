@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ion/math/Vector3.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -49,6 +51,31 @@ Sound loadWavFromMemory(const uint8_t* data, size_t size);
 // Encodes as 16-bit PCM WAV.
 std::vector<uint8_t> encodeWav(const SoundData& sound);
 
+// Fully decodes Ogg Vorbis / MP3 (mono or stereo) into memory. Best for short
+// effects; use openStream() + playStream() for long music.
+Sound loadOgg(const std::string& path);
+Sound loadOggFromMemory(const uint8_t* data, size_t size);
+Sound loadMp3(const std::string& path);
+Sound loadMp3FromMemory(const uint8_t* data, size_t size);
+
+// Picks the decoder from the file extension (.wav, .ogg, .mp3).
+Sound loadSound(const std::string& path);
+
+// A pull-based decoder for audio that is too long to hold in memory.
+class AudioStream {
+public:
+    virtual ~AudioStream() = default;
+    virtual uint32_t channels() const = 0; // 1 or 2
+    virtual uint32_t sampleRate() const = 0;
+    // Writes up to `frames` interleaved frames; returns the number written,
+    // 0 at end of stream.
+    virtual size_t read(float* out, size_t frames) = 0;
+    virtual bool rewind() = 0;
+};
+
+// Opens a .wav / .ogg / .mp3 file for streaming. Returns null on failure.
+std::unique_ptr<AudioStream> openStream(const std::string& path);
+
 enum class AudioBus { Sfx = 0, Music = 1 };
 
 struct PlayParams {
@@ -59,12 +86,53 @@ struct PlayParams {
     AudioBus bus = AudioBus::Sfx;
 };
 
+// Distance falloff models for 3D sounds.
+enum class Attenuation {
+    None,            // no distance falloff (pan and Doppler still apply)
+    InverseClamped,  // min / (min + rolloff * (clamp(d) - min)); the default
+    Linear,          // 1 at minDistance down to 0 at maxDistance
+    Exponential,     // (d / min) ^ -rolloff
+};
+
+struct SpatialParams {
+    Vector3 position;
+    Vector3 velocity;          // world units per second; drives Doppler
+    float minDistance = 1.0f;  // full volume inside this radius
+    float maxDistance = 50.0f; // no further attenuation beyond this
+    float rolloff = 1.0f;
+    Attenuation model = Attenuation::InverseClamped;
+    float dopplerFactor = 1.0f; // 0 disables Doppler
+};
+
+// The point sounds are heard from. forward/up define its orientation
+// (right = forward x up, so the default looks down -Z with +Y up, matching
+// ion::Camera).
+struct Listener {
+    Vector3 position;
+    Vector3 velocity;
+    Vector3 forward = {0.0f, 0.0f, -1.0f};
+    Vector3 up = {0.0f, 1.0f, 0.0f};
+};
+
+struct SpatialResult {
+    float gain = 1.0f;  // distance attenuation
+    float pan = 0.0f;   // -1 (left) .. +1 (right)
+    float pitch = 1.0f; // Doppler multiplier
+};
+
+// How a source at `source` is heard by `listener`. Pure function; the mixer
+// uses it each audio block, and it is exposed for tests and custom mixing.
+SpatialResult computeSpatial(const Listener& listener, const SpatialParams& source,
+                             float speedOfSound = 343.0f);
+
 // 0 is never a valid voice. Ids are not reused, so a stale id is harmless.
 using VoiceId = uint64_t;
 constexpr VoiceId INVALID_VOICE = 0;
 
 // Thread-safe software mixer. play()/stop()/etc. may be called from the game
 // thread while render() runs on the audio thread.
+struct StreamState; // internal: ring buffer + decode thread
+
 class AudioMixer {
 public:
     static constexpr size_t MAX_VOICES = 64;
@@ -75,12 +143,24 @@ public:
 
     // If all voices are busy, the oldest one is stolen.
     VoiceId play(const Sound& sound, const PlayParams& params = {});
+    // Plays a sound positioned in 3D. Stereo sounds are downmixed to mono so
+    // they can be placed. Update with setVoiceSpatial() as the emitter moves.
+    VoiceId play3D(const Sound& sound, const SpatialParams& spatial,
+                   const PlayParams& params = {});
+    // Streams audio decoded on a background thread (pitch is not applied).
+    // The mixer takes ownership. Use bus Music for background tracks.
+    VoiceId playStream(std::unique_ptr<AudioStream> stream, const PlayParams& params = {});
     void stop(VoiceId id);
     void stopAll();
     bool isPlaying(VoiceId id) const;
     void setVoiceVolume(VoiceId id, float volume);
     void setVoicePan(VoiceId id, float pan);
     void setVoicePitch(VoiceId id, float pitch);
+    // Moves a 3D voice (no-op for non-spatial voices).
+    void setVoiceSpatial(VoiceId id, const Vector3& position, const Vector3& velocity = {});
+
+    void setListener(const Listener& listener);
+    Listener listener() const;
 
     void setMasterVolume(float volume);
     float masterVolume() const;
@@ -96,18 +176,29 @@ private:
     struct Voice {
         VoiceId id = INVALID_VOICE;
         Sound sound;
+        std::shared_ptr<StreamState> stream; // set for streamed voices
         double position = 0.0; // in source frames
         float volume = 1.0f;
         float pan = 0.0f;
         float pitch = 1.0f;
         bool loop = false;
         AudioBus bus = AudioBus::Sfx;
+        bool spatial = false;
+        SpatialParams spatialParams;
+        // Gains used at the end of the previous block, so changes (volume,
+        // pan, movement) ramp across a block instead of clicking.
+        float lastGainL = 0.0f;
+        float lastGainR = 0.0f;
+        bool primed = false;
     };
+
+    VoiceId addVoice_(Voice&& v);
 
     uint32_t sampleRate_;
     mutable std::mutex mutex_;
     std::vector<Voice> voices_;
     VoiceId nextId_ = 1;
+    Listener listener_;
     float master_ = 1.0f;
     float bus_[2] = {1.0f, 1.0f};
 };
@@ -149,6 +240,15 @@ public:
 
     VoiceId play(const Sound& s, const PlayParams& p = {}) { return mixer_.play(s, p); }
     void stop(VoiceId id) { mixer_.stop(id); }
+
+    VoiceId play3D(const Sound& s, const SpatialParams& sp, const PlayParams& p = {}) {
+        return mixer_.play3D(s, sp, p);
+    }
+    void setListener(const Listener& l) { mixer_.setListener(l); }
+
+    // Streams a music file (.wav/.ogg/.mp3) on the Music bus, looping by
+    // default. Returns INVALID_VOICE if the file can't be opened.
+    VoiceId playMusic(const std::string& path, float volume = 1.0f, bool loop = true);
 
 private:
     AudioMixer mixer_{48000};

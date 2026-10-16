@@ -17,9 +17,11 @@ option(ION_ENABLE_VULKAN "Enable the Vulkan render backend" ON)
 add_library(ion_core STATIC
     core/Application.cpp
     core/Audio.cpp
+    core/AudioDecode.cpp
     core/AudioMixer.cpp
     core/Camera.cpp
     core/Camera2D.cpp
+    core/Collision.cpp
     core/Config.cpp
     core/Engine.cpp
     core/GltfModel.cpp
@@ -32,6 +34,7 @@ add_library(ion_core STATIC
     core/Model.cpp
     core/ObjModel.cpp
     core/ParticleSystem.cpp
+    core/Physics.cpp
     core/PerformanceOverlay.cpp
     core/Render.cpp
     core/Skybox.cpp
@@ -45,7 +48,8 @@ add_library(ion_core STATIC
 target_include_directories(ion_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(ion_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 find_package(ZLIB REQUIRED)
-target_link_libraries(ion_core PUBLIC ZLIB::ZLIB)
+find_package(Threads REQUIRED)
+target_link_libraries(ion_core PUBLIC ZLIB::ZLIB Threads::Threads)
 target_compile_definitions(ion_core PUBLIC
     ION_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     ION_VERSION_MINOR=${PROJECT_VERSION_MINOR}
@@ -217,7 +221,12 @@ if(ION_BUILD_TESTS)
 
     add_executable(audio_test tests/audio_test.cpp)
     target_link_libraries(audio_test PRIVATE ion_core)
+    target_compile_definitions(audio_test PRIVATE ION_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
     add_test(NAME audio_test COMMAND audio_test)
+
+    add_executable(physics_test tests/physics_test.cpp)
+    target_link_libraries(physics_test PRIVATE ion_core)
+    add_test(NAME physics_test COMMAND physics_test)
 
     add_executable(asteroids_test tests/asteroids_test.cpp)
     target_link_libraries(asteroids_test PRIVATE ion_core)
