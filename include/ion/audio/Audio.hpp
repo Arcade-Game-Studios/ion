@@ -1,5 +1,8 @@
 #pragma once
 
+#include <ion/math/Vector2.hpp>
+#include <ion/math/Vector3.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -57,7 +60,28 @@ struct PlayParams {
     float pitch = 1.0f; // playback speed multiplier (also shifts pitch)
     bool loop = false;
     AudioBus bus = AudioBus::Sfx;
+    float fadeIn = 0.0f;    // seconds to ramp up from silence
+    float startTime = 0.0f; // seconds into the sound to start from
 };
+
+// Distance attenuation and panning for a positioned sound. Full volume
+// within minDistance, silent beyond maxDistance, linear in between. Pan
+// follows the source's side relative to the listener and narrows toward the
+// center as the source gets close.
+struct SpatialGains {
+    float volume = 1.0f;
+    float pan = 0.0f;
+};
+
+SpatialGains computeSpatial(const Vector2& listener, const Vector2& source,
+                            float minDistance, float maxDistance);
+// listenerRight is the listener's unit right vector (e.g. Camera::right()).
+SpatialGains computeSpatial(const Vector3& listener, const Vector3& listenerRight,
+                            const Vector3& source, float minDistance, float maxDistance);
+
+// Returns `base` with volume scaled and pan replaced for a 2D source.
+PlayParams spatialize(PlayParams base, const Vector2& listener, const Vector2& source,
+                      float minDistance, float maxDistance);
 
 // 0 is never a valid voice. Ids are not reused, so a stale id is harmless.
 using VoiceId = uint64_t;
@@ -73,14 +97,31 @@ public:
 
     uint32_t sampleRate() const { return sampleRate_; }
 
-    // If all voices are busy, the oldest one is stolen.
+    // If all voices are busy, a voice is stolen: the oldest non-looping
+    // sound effect if there is one (so music keeps playing), else the oldest.
     VoiceId play(const Sound& sound, const PlayParams& params = {});
     void stop(VoiceId id);
     void stopAll();
+    void stopBus(AudioBus bus);
+    // True while the voice exists (including while paused).
     bool isPlaying(VoiceId id) const;
     void setVoiceVolume(VoiceId id, float volume);
     void setVoicePan(VoiceId id, float pan);
     void setVoicePitch(VoiceId id, float pitch);
+    void setVoiceLoop(VoiceId id, bool loop);
+
+    // Paused voices keep their position and resume where they left off.
+    void pause(VoiceId id);
+    void resume(VoiceId id);
+    bool isPaused(VoiceId id) const;
+    void pauseAll();
+    void resumeAll();
+
+    // Ramps the voice to silence over `seconds`, then stops it.
+    void fadeOut(VoiceId id, float seconds);
+
+    // Playback position in seconds (0 for unknown voices).
+    float voiceTime(VoiceId id) const;
 
     void setMasterVolume(float volume);
     float masterVolume() const;
@@ -101,8 +142,22 @@ private:
         float pan = 0.0f;
         float pitch = 1.0f;
         bool loop = false;
+        bool paused = false;
         AudioBus bus = AudioBus::Sfx;
+        // Fade multiplier, moved toward fadeTarget by fadeStep per frame.
+        float fade = 1.0f;
+        float fadeTarget = 1.0f;
+        float fadeStep = 0.0f;
+        bool stopAfterFade = false;
+        // Channel gains applied at the end of the last buffer; the next
+        // buffer ramps from these so volume/pan changes don't click.
+        float lastLeft = 0.0f;
+        float lastRight = 0.0f;
+        bool hasLastGain = false;
     };
+
+    Voice* find_(VoiceId id);
+    const Voice* find_(VoiceId id) const;
 
     uint32_t sampleRate_;
     mutable std::mutex mutex_;
@@ -112,8 +167,10 @@ private:
     float bus_[2] = {1.0f, 1.0f};
 };
 
-// Platform output device (CoreAudio on macOS). On platforms without a
-// backend, start() returns false and the mixer simply isn't pulled.
+// Platform output device: CoreAudio on macOS, ALSA on Linux (loaded at
+// runtime; ION_AUDIO_DEVICE selects the PCM device), waveOut on Windows. If
+// no device can be opened, start() returns false and the mixer simply isn't
+// pulled.
 class AudioDevice {
 public:
     AudioDevice();

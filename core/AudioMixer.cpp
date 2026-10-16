@@ -163,11 +163,82 @@ std::vector<uint8_t> encodeWav(const SoundData& sound) {
     return o;
 }
 
+// --- Spatial helpers --------------------------------------------------------
+
+namespace {
+
+float distanceGain(float distance, float minDistance, float maxDistance) {
+    if (distance <= minDistance) {
+        return 1.0f;
+    }
+    if (distance >= maxDistance || maxDistance <= minDistance) {
+        return 0.0f;
+    }
+    return 1.0f - (distance - minDistance) / (maxDistance - minDistance);
+}
+
+// Sources inside minDistance pan toward the center so a sound right on top
+// of the listener doesn't jump between ears.
+float spatialPan(float side, float distance, float minDistance) {
+    float width = minDistance > 0.0f ? std::min(1.0f, distance / minDistance) : 1.0f;
+    return clampf(side * width, -1.0f, 1.0f);
+}
+
+} // namespace
+
+SpatialGains computeSpatial(const Vector2& listener, const Vector2& source,
+                            float minDistance, float maxDistance) {
+    Vector2 delta = source - listener;
+    float distance = delta.length();
+    SpatialGains g;
+    g.volume = distanceGain(distance, minDistance, maxDistance);
+    g.pan = distance > 0.0f ? spatialPan(delta.x / distance, distance, minDistance) : 0.0f;
+    return g;
+}
+
+SpatialGains computeSpatial(const Vector3& listener, const Vector3& listenerRight,
+                            const Vector3& source, float minDistance, float maxDistance) {
+    Vector3 delta = source - listener;
+    float distance = delta.length();
+    SpatialGains g;
+    g.volume = distanceGain(distance, minDistance, maxDistance);
+    g.pan = distance > 0.0f
+                ? spatialPan(Vector3::dot(delta / distance, listenerRight), distance, minDistance)
+                : 0.0f;
+    return g;
+}
+
+PlayParams spatialize(PlayParams base, const Vector2& listener, const Vector2& source,
+                      float minDistance, float maxDistance) {
+    SpatialGains g = computeSpatial(listener, source, minDistance, maxDistance);
+    base.volume *= g.volume;
+    base.pan = g.pan;
+    return base;
+}
+
 // --- Mixer ----------------------------------------------------------------
 
 AudioMixer::AudioMixer(uint32_t outputSampleRate)
     : sampleRate_(outputSampleRate ? outputSampleRate : 48000) {
     voices_.reserve(MAX_VOICES);
+}
+
+AudioMixer::Voice* AudioMixer::find_(VoiceId id) {
+    for (Voice& v : voices_) {
+        if (v.id == id) {
+            return &v;
+        }
+    }
+    return nullptr;
+}
+
+const AudioMixer::Voice* AudioMixer::find_(VoiceId id) const {
+    for (const Voice& v : voices_) {
+        if (v.id == id) {
+            return &v;
+        }
+    }
+    return nullptr;
 }
 
 VoiceId AudioMixer::play(const Sound& sound, const PlayParams& params) {
@@ -176,7 +247,11 @@ VoiceId AudioMixer::play(const Sound& sound, const PlayParams& params) {
     }
     std::lock_guard<std::mutex> lock(mutex_);
     if (voices_.size() >= MAX_VOICES) {
-        voices_.erase(voices_.begin()); // oldest
+        // Steal the oldest one-shot sound effect; fall back to the oldest.
+        auto victim = std::find_if(voices_.begin(), voices_.end(), [](const Voice& v) {
+            return !v.loop && v.bus == AudioBus::Sfx;
+        });
+        voices_.erase(victim != voices_.end() ? victim : voices_.begin());
     }
     Voice v;
     v.id = nextId_++;
@@ -186,6 +261,14 @@ VoiceId AudioMixer::play(const Sound& sound, const PlayParams& params) {
     v.pitch = std::max(0.01f, params.pitch);
     v.loop = params.loop;
     v.bus = params.bus;
+    double start = std::max(0.0f, params.startTime) * (double)sound->sampleRate;
+    double total = (double)sound->frames();
+    v.position = v.loop ? std::fmod(start, total) : std::min(start, total);
+    if (params.fadeIn > 0.0f) {
+        v.fade = 0.0f;
+        v.fadeTarget = 1.0f;
+        v.fadeStep = 1.0f / (params.fadeIn * (float)sampleRate_);
+    }
     voices_.push_back(std::move(v));
     return voices_.back().id;
 }
@@ -202,33 +285,104 @@ void AudioMixer::stopAll() {
     voices_.clear();
 }
 
+void AudioMixer::stopBus(AudioBus bus) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    voices_.erase(std::remove_if(voices_.begin(), voices_.end(),
+                                 [&](const Voice& v) { return v.bus == bus; }),
+                  voices_.end());
+}
+
 bool AudioMixer::isPlaying(VoiceId id) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return std::any_of(voices_.begin(), voices_.end(),
-                       [&](const Voice& v) { return v.id == id; });
+    return find_(id) != nullptr;
 }
-
-#define ION_WITH_VOICE(id, v, body)                                 \
-    do {                                                            \
-        std::lock_guard<std::mutex> lock(mutex_);                   \
-        for (Voice& v : voices_) {                                  \
-            if (v.id == (id)) {                                     \
-                body;                                               \
-                break;                                              \
-            }                                                       \
-        }                                                           \
-    } while (0)
 
 void AudioMixer::setVoiceVolume(VoiceId id, float volume) {
-    ION_WITH_VOICE(id, v, v.volume = std::max(0.0f, volume));
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (Voice* v = find_(id)) {
+        v->volume = std::max(0.0f, volume);
+    }
 }
+
 void AudioMixer::setVoicePan(VoiceId id, float pan) {
-    ION_WITH_VOICE(id, v, v.pan = clampf(pan, -1.0f, 1.0f));
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (Voice* v = find_(id)) {
+        v->pan = clampf(pan, -1.0f, 1.0f);
+    }
 }
+
 void AudioMixer::setVoicePitch(VoiceId id, float pitch) {
-    ION_WITH_VOICE(id, v, v.pitch = std::max(0.01f, pitch));
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (Voice* v = find_(id)) {
+        v->pitch = std::max(0.01f, pitch);
+    }
 }
-#undef ION_WITH_VOICE
+
+void AudioMixer::setVoiceLoop(VoiceId id, bool loop) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (Voice* v = find_(id)) {
+        v->loop = loop;
+    }
+}
+
+void AudioMixer::pause(VoiceId id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (Voice* v = find_(id)) {
+        v->paused = true;
+    }
+}
+
+void AudioMixer::resume(VoiceId id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (Voice* v = find_(id)) {
+        v->paused = false;
+    }
+}
+
+bool AudioMixer::isPaused(VoiceId id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const Voice* v = find_(id);
+    return v && v->paused;
+}
+
+void AudioMixer::pauseAll() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (Voice& v : voices_) {
+        v.paused = true;
+    }
+}
+
+void AudioMixer::resumeAll() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (Voice& v : voices_) {
+        v.paused = false;
+    }
+}
+
+void AudioMixer::fadeOut(VoiceId id, float seconds) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    Voice* v = find_(id);
+    if (!v) {
+        return;
+    }
+    v->stopAfterFade = true;
+    v->fadeTarget = 0.0f;
+    if (seconds <= 0.0f) {
+        v->fade = 0.0f;
+        v->fadeStep = 1.0f;
+    } else {
+        v->fadeStep = std::max(v->fade, 1e-6f) / (seconds * (float)sampleRate_);
+    }
+}
+
+float AudioMixer::voiceTime(VoiceId id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const Voice* v = find_(id);
+    if (!v) {
+        return 0.0f;
+    }
+    return (float)(v->position / (double)v->sound->sampleRate);
+}
 
 void AudioMixer::setMasterVolume(float volume) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -254,11 +408,21 @@ size_t AudioMixer::activeVoices() const {
 
 void AudioMixer::render(float* out, uint32_t frames) {
     std::fill(out, out + (size_t)frames * 2, 0.0f);
+    if (frames == 0) {
+        return;
+    }
 
     std::lock_guard<std::mutex> lock(mutex_);
     for (Voice& v : voices_) {
+        if (v.paused) {
+            // Resume from silence rather than jumping straight to full gain.
+            v.lastLeft = v.lastRight = 0.0f;
+            v.hasLastGain = true;
+            continue;
+        }
         const SoundData& s = *v.sound;
         const size_t total = s.frames();
+        const double totalD = (double)total;
         const double step = (double)v.pitch * (double)s.sampleRate / (double)sampleRate_;
         const float gain = v.volume * master_ * bus_[(int)v.bus];
         float gl, gr;
@@ -271,15 +435,32 @@ void AudioMixer::render(float* out, uint32_t frames) {
         }
         gl *= gain;
         gr *= gain;
+        if (!v.hasLastGain) {
+            v.lastLeft = gl;
+            v.lastRight = gr;
+            v.hasLastGain = true;
+        }
+        // Linear ramp from the previous buffer's gains to the new ones.
+        const float rampL = (gl - v.lastLeft) / (float)frames;
+        const float rampR = (gr - v.lastRight) / (float)frames;
+        float curL = v.lastLeft;
+        float curR = v.lastRight;
 
         double pos = v.position;
-        uint32_t i = 0;
-        for (; i < frames; i++) {
+        bool finished = false;
+        for (uint32_t i = 0; i < frames; i++) {
+            if (pos >= totalD) {
+                if (!v.loop) {
+                    finished = true;
+                    break;
+                }
+                // fmod, not a single subtraction: with a high pitch on a
+                // short sound one step can span several loop lengths.
+                pos = std::fmod(pos, totalD);
+            }
             size_t i0 = (size_t)pos;
-            if (i0 >= total) {
-                if (!v.loop) break;
-                pos -= (double)total;
-                i0 = (size_t)pos;
+            if (i0 >= total) { // guards float rounding at the boundary
+                i0 = total - 1;
             }
             size_t i1 = i0 + 1;
             if (i1 >= total) {
@@ -294,15 +475,25 @@ void AudioMixer::render(float* out, uint32_t frames) {
                 r = s.samples[i0 * 2 + 1] +
                     (s.samples[i1 * 2 + 1] - s.samples[i0 * 2 + 1]) * t;
             }
-            out[i * 2] += l * gl;
-            out[i * 2 + 1] += r * gr;
+            curL += rampL;
+            curR += rampR;
+            if (v.fade != v.fadeTarget) {
+                v.fade = v.fade < v.fadeTarget ? std::min(v.fadeTarget, v.fade + v.fadeStep)
+                                               : std::max(v.fadeTarget, v.fade - v.fadeStep);
+            }
+            out[i * 2] += l * curL * v.fade;
+            out[i * 2 + 1] += r * curR * v.fade;
             pos += step;
+            if (v.stopAfterFade && v.fade <= 0.0f) {
+                finished = true;
+                break;
+            }
         }
         v.position = pos;
-        if (i < frames) {
-            v.id = INVALID_VOICE; // finished mid-buffer; reaped below
-        } else if (!v.loop && pos >= (double)total) {
-            v.id = INVALID_VOICE;
+        v.lastLeft = gl;
+        v.lastRight = gr;
+        if (finished || (!v.loop && pos >= totalD)) {
+            v.id = INVALID_VOICE; // reaped below
         }
     }
     voices_.erase(std::remove_if(voices_.begin(), voices_.end(),

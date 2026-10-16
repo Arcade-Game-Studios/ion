@@ -203,10 +203,133 @@ static void testLiveVoiceControls() {
     CHECK_NEAR(out[0], 0.25f, 1e-4f);
     m.setVoicePan(v, 1.0f);
     m.render(out, 4);
+    // Gain changes ramp across the buffer (no clicks) and land exactly on
+    // the new value at its end.
+    CHECK(out[0] > 0.0f && out[0] < 0.25f);
+    CHECK_NEAR(out[6], 0.0f, 1e-4f);
+    CHECK_NEAR(out[7], 0.25f, 1e-4f);
+    m.render(out, 4);
     CHECK_NEAR(out[0], 0.0f, 1e-4f);
     CHECK_NEAR(out[1], 0.25f, 1e-4f);
     m.setVoiceVolume(INVALID_VOICE, 1.0f); // no-op
     CHECK(m.play(nullptr) == INVALID_VOICE);
+}
+
+static void testHighPitchShortLoop() {
+    // A step longer than the whole sound used to index past its end.
+    AudioMixer m(48000);
+    std::vector<float> out(2 * 256);
+    VoiceId v = m.play(makeSound({0.1f, 0.2f}, 1, 48000), {.pitch = 8.0f, .loop = true});
+    m.render(out.data(), 256);
+    CHECK(m.isPlaying(v));
+    bool finite = true;
+    for (float sample : out) {
+        finite = finite && std::isfinite(sample) && std::fabs(sample) <= 0.25f;
+    }
+    CHECK(finite);
+}
+
+static void testPauseResumeAndBuses() {
+    AudioMixer m(48000);
+    float out[2 * 8];
+    VoiceId v = m.play(constant(1.0f, 100), {.pan = -1.0f});
+    m.render(out, 8);
+    float before = m.voiceTime(v);
+    CHECK_NEAR(before, 8.0f / 48000.0f, 1e-7f);
+    m.pause(v);
+    CHECK(m.isPaused(v));
+    m.render(out, 8);
+    CHECK(out[0] == 0.0f);
+    CHECK(m.voiceTime(v) == before); // position frozen
+    CHECK(m.isPlaying(v));           // paused voices still exist
+    m.resume(v);
+    m.render(out, 8);
+    CHECK(out[0] < out[14]); // ramps back up from silence: no click
+    CHECK_NEAR(out[14], 1.0f, 1e-4f);
+
+    VoiceId music = m.play(constant(0.5f, 100), {.loop = true, .bus = AudioBus::Music});
+    m.pauseAll();
+    CHECK(m.isPaused(v) && m.isPaused(music));
+    m.resumeAll();
+    CHECK(!m.isPaused(music));
+    m.stopBus(AudioBus::Sfx);
+    CHECK(!m.isPlaying(v));
+    CHECK(m.isPlaying(music));
+    m.setVoiceLoop(music, false);
+    m.render(out, 8);
+    std::vector<float> big(2 * 200);
+    m.render(big.data(), 200);
+    CHECK(!m.isPlaying(music)); // stopped looping, so it ended
+    CHECK(m.voiceTime(music) == 0.0f);
+}
+
+static void testFades() {
+    AudioMixer m(1000);
+    std::vector<float> out(2 * 100);
+    VoiceId v = m.play(constant(1.0f, 10000, 1000), {.pan = -1.0f, .loop = true, .fadeIn = 0.1f});
+    m.render(out.data(), 100);
+    CHECK(out[0] < 0.05f);              // starts near silence
+    CHECK_NEAR(out[2 * 49], 0.5f, 0.02f); // halfway through the 100-frame fade
+    CHECK_NEAR(out[2 * 99], 1.0f, 1e-4f);
+
+    m.fadeOut(v, 0.05f);
+    m.render(out.data(), 100);
+    CHECK_NEAR(out[2 * 24], 0.5f, 0.03f);
+    CHECK(out[2 * 60] == 0.0f);
+    CHECK(!m.isPlaying(v)); // stopped once silent
+
+    VoiceId w = m.play(constant(1.0f, 100, 1000));
+    m.fadeOut(w, 0.0f);
+    m.render(out.data(), 10);
+    CHECK(!m.isPlaying(w));
+    m.fadeOut(INVALID_VOICE, 1.0f); // no-op
+}
+
+static void testStartTimeAndStealing() {
+    AudioMixer m(1000);
+    float out[2 * 4];
+    std::vector<float> ramp(1000);
+    for (size_t i = 0; i < ramp.size(); i++) {
+        ramp[i] = (float)i / 1000.0f;
+    }
+    Sound s = makeSound(ramp, 1, 1000);
+    VoiceId v = m.play(s, {.pan = -1.0f, .startTime = 0.5f});
+    m.render(out, 4);
+    CHECK_NEAR(out[0], 0.5f, 1e-4f);
+    CHECK_NEAR(m.voiceTime(v), 0.504f, 1e-4f);
+    m.stopAll();
+
+    // Voice stealing spares looping music.
+    Sound loud = constant(0.1f, 1000);
+    VoiceId music = m.play(loud, {.loop = true, .bus = AudioBus::Music});
+    VoiceId oldestSfx = m.play(loud);
+    for (size_t i = 0; i < AudioMixer::MAX_VOICES; i++) {
+        m.play(loud);
+    }
+    CHECK(m.isPlaying(music));
+    CHECK(!m.isPlaying(oldestSfx));
+}
+
+static void testSpatial() {
+    SpatialGains near = computeSpatial(Vector2(0, 0), Vector2(1, 0), 2.0f, 10.0f);
+    CHECK(near.volume == 1.0f);
+    CHECK_NEAR(near.pan, 0.5f, 1e-6f); // inside minDistance: narrowed
+    SpatialGains mid = computeSpatial(Vector2(0, 0), Vector2(-6, 0), 2.0f, 10.0f);
+    CHECK_NEAR(mid.volume, 0.5f, 1e-6f);
+    CHECK_NEAR(mid.pan, -1.0f, 1e-6f);
+    CHECK(computeSpatial(Vector2(0, 0), Vector2(0, 50), 2.0f, 10.0f).volume == 0.0f);
+    CHECK(computeSpatial(Vector2(3, 3), Vector2(3, 3), 2.0f, 10.0f).pan == 0.0f);
+
+    SpatialGains s3 = computeSpatial(Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(0, 0, -4),
+                                     1.0f, 9.0f);
+    CHECK_NEAR(s3.volume, 0.625f, 1e-6f);
+    CHECK_NEAR(s3.pan, 0.0f, 1e-6f); // straight ahead
+    s3 = computeSpatial(Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(5, 0, 0), 1.0f, 9.0f);
+    CHECK_NEAR(s3.pan, 1.0f, 1e-6f);
+
+    PlayParams p = spatialize({.volume = 0.8f}, Vector2(0, 0), Vector2(6, 0), 2.0f, 10.0f);
+    CHECK_NEAR(p.volume, 0.4f, 1e-6f);
+    CHECK_NEAR(p.pan, 1.0f, 1e-6f);
 }
 
 int main() {
@@ -222,6 +345,11 @@ int main() {
     testInterpolation();
     testClippingAndVoiceCap();
     testLiveVoiceControls();
+    testHighPitchShortLoop();
+    testPauseResumeAndBuses();
+    testFades();
+    testStartTimeAndStealing();
+    testSpatial();
     if (failures == 0) std::printf("audio_test: all passed\n");
     return failures == 0 ? 0 : 1;
 }
