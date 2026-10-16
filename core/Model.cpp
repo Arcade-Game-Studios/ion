@@ -57,9 +57,8 @@ bool loadModel(Renderer& renderer, const std::string& path, Model& out) {
     if (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".obj") == 0) {
         return loadObjModel(renderer, path, out);
     }
-    if (lower.size() >= 5 &&
-        (lower.compare(lower.size() - 5, 5, ".gltf") == 0 ||
-         lower.compare(lower.size() - 4, 4, ".glb") == 0)) {
+    if ((lower.size() >= 5 && lower.compare(lower.size() - 5, 5, ".gltf") == 0) ||
+        (lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".glb") == 0)) {
         return loadGltfModel(renderer, path, out);
     }
     ION_LOG_ERROR("Model: unsupported format for '%s' (expected .obj, .gltf "

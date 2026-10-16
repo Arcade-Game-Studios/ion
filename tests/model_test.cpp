@@ -383,6 +383,123 @@ static void testBadFile() {
     renderer.shutdown();
 }
 
+static void testObjWhitespaceAndExtensions() {
+    ensureTempDir();
+    // Double spaces, tabs and trailing spaces used to parse as zeros.
+    writeString(tempDir() + "/ws.obj",
+                "mtllib ws.mtl\n"
+                "v  -1\t-2   -3 \n"
+                "v 4 5 6 1 0 0\n"   // vertex color extension
+                "v\t0 0 0\n"
+                "vt 0.5\n"          // v component is optional
+                "vn 0 0 0\n"        // degenerate normal keeps indices aligned
+                "vn 0 1 0\n"
+                "usemtl shiny\n"
+                "f 1/1/2  2/1/2\t3/1/2\n");
+    writeString(tempDir() + "/ws.mtl",
+                "newmtl shiny\n"
+                "Kd  0.25\t0.5 1\n"
+                "Ns 98\n"
+                "d -halo 0.5\n"
+                "map_Kd -s 1 1 1 rgba.png\n");
+    ion::Renderer renderer;
+    ion::RendererConfig config;
+    config.backend = ion::RendererBackend::Null;
+    CHECK(renderer.initialize(nullptr, config));
+    ion::Model model;
+    CHECK(ion::loadModel(renderer, tempDir() + "/ws.obj", model));
+    CHECK(model.parts.size() == 1);
+    if (!model.parts.empty()) {
+        const ion::ModelPart& part = model.parts[0];
+        CHECK(part.mesh.bounds.min == ion::Vector3(-1, -2, -3));
+        CHECK(part.mesh.bounds.max == ion::Vector3(4, 5, 6));
+        CHECK_NEAR(part.material.baseColor.r, 0.25f, 1e-6f);
+        CHECK_NEAR(part.material.baseColor.g, 0.5f, 1e-6f);
+        CHECK_NEAR(part.material.baseColor.a, 0.5f, 1e-6f);
+        CHECK_NEAR(part.material.roughness, 0.1414f, 1e-3f); // sqrt(2/100)
+        CHECK(part.material.texture.isValid()); // options before the file name
+    }
+    model.destroy(renderer);
+    renderer.shutdown();
+}
+
+// Builds a one-triangle glTF around custom accessor/node JSON.
+static std::string gltfWith(const std::string& accessors, const std::string& extra,
+                            const std::vector<uint8_t>& bin) {
+    return "{\"asset\":{\"version\":\"2.0\"},"
+           "\"buffers\":[{\"byteLength\":" + std::to_string(bin.size()) +
+           ",\"uri\":\"data:application/octet-stream;base64," + base64Encode(bin) + "\"}],"
+           "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+           "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":6}],"
+           "\"accessors\":" + accessors + "," +
+           "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":2},"
+           "\"indices\":1}]}]," + extra + "}";
+}
+
+static std::vector<uint8_t> triangleBin(uint16_t lastIndex) {
+    float positions[9] = {0, 0, 0, 1, 0, 0, 0, 1, 0};
+    uint16_t indices[3] = {0, 1, lastIndex};
+    std::vector<uint8_t> bin(42);
+    std::memcpy(bin.data(), positions, 36);
+    std::memcpy(bin.data() + 36, indices, 6);
+    return bin;
+}
+
+static bool loadGltfText(ion::Renderer& renderer, const std::string& name,
+                         const std::string& json, ion::Model& model) {
+    writeString(tempDir() + "/" + name, json);
+    return ion::loadModel(renderer, tempDir() + "/" + name, model);
+}
+
+static void testGltfRobustness() {
+    ensureTempDir();
+    ion::Renderer renderer;
+    ion::RendererConfig config;
+    config.backend = ion::RendererBackend::Null;
+    CHECK(renderer.initialize(nullptr, config));
+
+    const std::string good =
+        "[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},"
+        "{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"},"
+        // NORMAL without a bufferView: all zeros per the spec (used to crash).
+        "{\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"normalized\":false}]";
+    const std::string oneNode = "\"nodes\":[{\"mesh\":0}]";
+
+    // No "scenes": root nodes are rendered instead of nothing.
+    ion::Model model;
+    CHECK(loadGltfText(renderer, "noscene.gltf", gltfWith(good, oneNode, triangleBin(2)), model));
+    CHECK(model.parts.size() == 1);
+    if (!model.parts.empty()) {
+        CHECK(model.parts[0].mesh.bounds.max == ion::Vector3(1, 1, 0));
+    }
+    model.destroy(renderer);
+
+    // Index past the vertex count: rejected instead of uploaded to the GPU.
+    CHECK(!loadGltfText(renderer, "badindex.gltf", gltfWith(good, oneNode, triangleBin(7)), model));
+
+    // Accessor larger than its buffer: rejected without reading out of bounds.
+    const std::string tooLong =
+        "[{\"bufferView\":0,\"componentType\":5126,\"count\":300,\"type\":\"VEC3\"},"
+        "{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"},"
+        "{\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}]";
+    CHECK(!loadGltfText(renderer, "overrun.gltf", gltfWith(tooLong, oneNode, triangleBin(2)), model));
+
+    // Primitive pointing at a missing accessor.
+    const std::string missing =
+        "[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}]";
+    CHECK(!loadGltfText(renderer, "missing.gltf", gltfWith(missing, oneNode, triangleBin(2)), model));
+
+    // A node cycle terminates.
+    const std::string cycle =
+        "\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0,\"children\":[1]},{\"children\":[0]}]";
+    CHECK(loadGltfText(renderer, "cycle.gltf", gltfWith(good, cycle, triangleBin(2)), model));
+    CHECK(!model.parts.empty());
+    model.destroy(renderer);
+
+    renderer.shutdown();
+}
+
 int main() {
     ensureTempDir();
     testPngRgba();
@@ -391,6 +508,8 @@ int main() {
     testLoadGltf();
     testLoadGlb();
     testBadFile();
+    testObjWhitespaceAndExtensions();
+    testGltfRobustness();
 
     if (failures == 0) {
         std::printf("model_test: all tests passed\n");

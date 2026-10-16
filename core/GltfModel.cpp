@@ -4,6 +4,7 @@
 #include <ion/render/Image.hpp>
 #include <ion/render/Renderer.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -452,6 +453,44 @@ std::string baseDirectory(const std::string& path) {
     return path.substr(0, slash);
 }
 
+// Resolves an accessor's data pointer and stride, verifying the whole
+// element range lies inside its buffer. base is null for accessors without
+// a bufferView (the spec says those read as zeros).
+bool resolveAccessor(const GltfDocument& doc, const GltfAccessor& accessor,
+                     const uint8_t*& base, size_t& stride) {
+    base = nullptr;
+    stride = accessor.elementSize;
+    if (accessor.bufferView < 0) {
+        return true;
+    }
+    if (accessor.bufferView >= (int)doc.bufferViews.size()) {
+        return false;
+    }
+    const GltfBufferView& view = doc.bufferViews[accessor.bufferView];
+    if (view.buffer < 0 || view.buffer >= (int)doc.buffers.size()) {
+        return false;
+    }
+    if (view.byteStride > 0) {
+        if (view.byteStride < accessor.elementSize) {
+            return false;
+        }
+        stride = view.byteStride;
+    }
+    const std::vector<uint8_t>& buffer = doc.buffers[view.buffer].data;
+    // Last byte read: offset + (count - 1) * stride + elementSize.
+    uint64_t start = (uint64_t)view.byteOffset + accessor.byteOffset;
+    uint64_t span = accessor.count == 0
+                        ? 0
+                        : (uint64_t)(accessor.count - 1) * stride + accessor.elementSize;
+    if (view.byteOffset + view.byteLength > buffer.size() ||
+        accessor.byteOffset + span > view.byteLength || start + span > buffer.size()) {
+        ION_LOG_WARN("glTF: accessor reads past the end of its buffer");
+        return false;
+    }
+    base = buffer.data() + start;
+    return true;
+}
+
 // Reads a single accessor as floats. Supports FLOAT plus normalized integer
 // component types. Returns false on invalid accessor.
 bool readAccessorFloats(const GltfDocument& doc, int accessorIndex,
@@ -464,26 +503,17 @@ bool readAccessorFloats(const GltfDocument& doc, int accessorIndex,
     if (accessor.count == 0) {
         return true;
     }
-    const GltfBufferView* view = nullptr;
     const uint8_t* base = nullptr;
-    if (accessor.bufferView >= 0) {
-        if (accessor.bufferView >= (int)doc.bufferViews.size()) {
-            return false;
-        }
-        view = &doc.bufferViews[accessor.bufferView];
-        if (view->buffer < 0 || view->buffer >= (int)doc.buffers.size()) {
-            return false;
-        }
-        base = doc.buffers[view->buffer].data.data() + view->byteOffset +
-               accessor.byteOffset;
-    }
-
-    size_t stride = accessor.elementSize;
-    if (view && view->byteStride > 0) {
-        stride = view->byteStride;
+    size_t stride = 0;
+    if (!resolveAccessor(doc, accessor, base, stride)) {
+        return false;
     }
     size_t componentSize = accessor.componentSize;
     size_t components = accessor.componentCount;
+    if (!base) {
+        std::fill(output, output + accessor.count * components, 0.0f);
+        return true;
+    }
 
     for (size_t i = 0; i < accessor.count; i++) {
         const uint8_t* src = base + i * stride;
@@ -541,19 +571,10 @@ bool readAccessorIndices(const GltfDocument& doc, int accessorIndex,
     if (accessor.type != "SCALAR") {
         return false;
     }
-    if (accessor.bufferView < 0 ||
-        accessor.bufferView >= (int)doc.bufferViews.size()) {
+    const uint8_t* base = nullptr;
+    size_t stride = 0;
+    if (!resolveAccessor(doc, accessor, base, stride) || !base) {
         return false;
-    }
-    const GltfBufferView& view = doc.bufferViews[accessor.bufferView];
-    if (view.buffer < 0 || view.buffer >= (int)doc.buffers.size()) {
-        return false;
-    }
-    const uint8_t* base = doc.buffers[view.buffer].data.data() +
-                          view.byteOffset + accessor.byteOffset;
-    size_t stride = accessor.elementSize;
-    if (view.byteStride > 0) {
-        stride = view.byteStride;
     }
     output.resize(accessor.count);
     for (size_t i = 0; i < accessor.count; i++) {
@@ -656,7 +677,11 @@ bool parseGltfJson(const JsonValue& root, const std::string& baseDir,
             if (const JsonValue* count = accessor.get("count")) {
                 gltfAccessor.count = (size_t)count->asNumber(0);
             }
-            gltfAccessor.normalized = accessor.get("normalized") != nullptr;
+            // The key may be present with value false.
+            if (const JsonValue* normalized = accessor.get("normalized")) {
+                gltfAccessor.normalized =
+                    normalized->type == JsonValue::Type::Bool && normalized->boolean;
+            }
             gltfAccessor.componentCount = componentCountOf(gltfAccessor.type);
             gltfAccessor.componentSize =
                 componentSizeOf(gltfAccessor.componentType);
@@ -870,6 +895,7 @@ bool loadGltfModel(Renderer& renderer, const std::string& path, Model& out) {
         int position = -1;
         int normal = -1;
         int uv = -1;
+        int color = -1;
         int indices = -1;
         int material = -1;
         int mode = 4;
@@ -893,6 +919,9 @@ bool loadGltfModel(Renderer& renderer, const std::string& path, Model& out) {
                         }
                         if (const JsonValue* uv = attributes->get("TEXCOORD_0")) {
                             prim.uv = (int)uv->asNumber(-1);
+                        }
+                        if (const JsonValue* color = attributes->get("COLOR_0")) {
+                            prim.color = (int)color->asNumber(-1);
                         }
                     }
                     if (const JsonValue* indices = primitive.get("indices")) {
@@ -1007,6 +1036,23 @@ bool loadGltfModel(Renderer& renderer, const std::string& path, Model& out) {
         }
     }
 
+    // No scene: treat every node that isn't someone's child as a root.
+    if (doc.rootNodes.empty() && !nodes.empty()) {
+        std::vector<bool> isChild(nodes.size(), false);
+        for (const GltfNodeData& node : nodes) {
+            for (int child : node.children) {
+                if (child >= 0 && child < (int)nodes.size()) {
+                    isChild[child] = true;
+                }
+            }
+        }
+        for (size_t i = 0; i < nodes.size(); i++) {
+            if (!isChild[i]) {
+                doc.rootNodes.push_back((int)i);
+            }
+        }
+    }
+
     // Traverse node hierarchy, emitting one part per mesh primitive.
     out.parts.clear();
     struct Pending {
@@ -1020,7 +1066,10 @@ bool loadGltfModel(Renderer& renderer, const std::string& path, Model& out) {
         }
     }
     size_t consumed = 0;
-    while (consumed < pending.size()) {
+    // A valid glTF node graph is a forest, so no node is visited twice;
+    // the cap stops malformed files with cycles from looping forever.
+    const size_t maxVisits = nodes.size() * 4 + 16;
+    while (consumed < pending.size() && consumed < maxVisits) {
         Pending item = pending[consumed++];
         const GltfNodeData& node = nodes[item.nodeIndex];
         for (int child : node.children) {
@@ -1038,7 +1087,15 @@ bool loadGltfModel(Renderer& renderer, const std::string& path, Model& out) {
                              primitive.mode);
                 continue;
             }
-            if (primitive.position < 0) {
+            auto validAccessor = [&](int index) {
+                return index >= 0 && index < (int)doc.accessors.size();
+            };
+            if (!validAccessor(primitive.position) ||
+                (primitive.normal >= 0 && !validAccessor(primitive.normal)) ||
+                (primitive.uv >= 0 && !validAccessor(primitive.uv)) ||
+                (primitive.color >= 0 && !validAccessor(primitive.color)) ||
+                (primitive.indices >= 0 && !validAccessor(primitive.indices))) {
+                ION_LOG_WARN("glTF: primitive references a missing accessor");
                 continue;
             }
             const GltfAccessor& positionAccessor =
@@ -1055,16 +1112,47 @@ bool loadGltfModel(Renderer& renderer, const std::string& path, Model& out) {
             if (!readAccessorFloats(doc, primitive.position, positions.data())) {
                 continue;
             }
-            if (primitive.normal >= 0) {
+            // Attribute accessors must match the vertex count and shape, or
+            // reading them would overrun the arrays sized from POSITION.
+            auto matches = [&](int index, const char* type) {
+                const GltfAccessor& a = doc.accessors[index];
+                return a.count == vertexCount && a.type == type;
+            };
+            if (primitive.normal >= 0 && matches(primitive.normal, "VEC3")) {
                 readAccessorFloats(doc, primitive.normal, normals.data());
             }
-            if (primitive.uv >= 0) {
+            if (primitive.uv >= 0 && matches(primitive.uv, "VEC2")) {
                 readAccessorFloats(doc, primitive.uv, uvs.data());
+            }
+            std::vector<float> colors;
+            size_t colorComponents = 0;
+            if (primitive.color >= 0) {
+                const GltfAccessor& ca = doc.accessors[primitive.color];
+                colorComponents = ca.componentCount;
+                if (ca.count == vertexCount && (colorComponents == 3 || colorComponents == 4)) {
+                    colors.resize(vertexCount * colorComponents);
+                    if (!readAccessorFloats(doc, primitive.color, colors.data())) {
+                        colors.clear();
+                    }
+                }
             }
 
             std::vector<uint32_t> indices;
             bool indexed = primitive.indices >= 0 &&
                            readAccessorIndices(doc, primitive.indices, indices);
+            if (indexed) {
+                bool inRange = true;
+                for (uint32_t index : indices) {
+                    inRange = inRange && index < vertexCount;
+                }
+                if (!inRange || indices.size() % 3 != 0) {
+                    ION_LOG_WARN("glTF: primitive has invalid indices; skipped");
+                    continue;
+                }
+            } else if (primitive.indices >= 0) {
+                ION_LOG_WARN("glTF: unreadable index accessor; skipped");
+                continue;
+            }
 
             std::vector<Vertex> vertices;
             vertices.reserve(vertexCount);
@@ -1079,6 +1167,10 @@ bool loadGltfModel(Renderer& renderer, const std::string& path, Model& out) {
                     normal.length() > 1e-8f ? normal.normalized() : normal;
                 vertex.uv = Vector2(uvs[i * 2], uvs[i * 2 + 1]);
                 vertex.color = {1.0f, 1.0f, 1.0f, 1.0f};
+                if (!colors.empty()) {
+                    const float* c = &colors[i * colorComponents];
+                    vertex.color = {c[0], c[1], c[2], colorComponents == 4 ? c[3] : 1.0f};
+                }
                 vertices.push_back(vertex);
             }
 

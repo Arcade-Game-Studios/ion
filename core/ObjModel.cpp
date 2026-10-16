@@ -35,6 +35,7 @@ struct ObjUsemtlEvent {
 
 struct ObjData {
     std::vector<Vector3> positions;
+    std::vector<Vector4> colors; // optional "v x y z r g b" extension
     std::vector<Vector2> uvs;
     std::vector<Vector3> normals;
     std::vector<ObjTriangle> triangles;
@@ -49,6 +50,32 @@ std::string trim(const std::string& s) {
     }
     size_t last = s.find_last_not_of(" \t\r");
     return s.substr(first, last - first + 1);
+}
+
+// Splits on runs of spaces/tabs. OBJ files commonly use several spaces or
+// tabs between fields; splitting on single spaces produced empty tokens
+// that parsed as 0.
+std::vector<std::string> tokenize(const std::string& s) {
+    std::vector<std::string> parts;
+    std::stringstream ss(s);
+    std::string item;
+    while (ss >> item) {
+        parts.push_back(item);
+    }
+    return parts;
+}
+
+float parseFloat(const std::string& token, float fallback = 0.0f) {
+    const char* begin = token.c_str();
+    char* end = nullptr;
+    float value = std::strtof(begin, &end);
+    return end == begin ? fallback : value;
+}
+
+// The last token of a texture statement is the file name; earlier tokens
+// are options such as "-s 1 1 1" or "-bm 0.5".
+std::string textureFileName(const std::vector<std::string>& toks) {
+    return toks.size() >= 2 ? toks.back() : std::string();
 }
 
 std::vector<std::string> split(const std::string& s, char delim) {
@@ -106,29 +133,33 @@ bool parseObjFile(const std::string& path, ObjData& data) {
         ss >> command;
 
         if (command == "v") {
-            std::vector<std::string> toks = split(t, ' ');
+            std::vector<std::string> toks = tokenize(t);
             if (toks.size() >= 4) {
-                data.positions.push_back(
-                    Vector3((float)std::atof(toks[1].c_str()),
-                            (float)std::atof(toks[2].c_str()),
-                            (float)std::atof(toks[3].c_str())));
+                data.positions.push_back(Vector3(parseFloat(toks[1]), parseFloat(toks[2]),
+                                                 parseFloat(toks[3])));
+                // Per-vertex color extension (MeshLab, ZBrush exporters).
+                if (toks.size() >= 7) {
+                    data.colors.resize(data.positions.size() - 1, Vector4(1, 1, 1, 1));
+                    data.colors.push_back(Vector4(parseFloat(toks[4], 1.0f),
+                                                  parseFloat(toks[5], 1.0f),
+                                                  parseFloat(toks[6], 1.0f), 1.0f));
+                }
             }
         } else if (command == "vt") {
-            std::vector<std::string> toks = split(t, ' ');
-            if (toks.size() >= 3) {
-                data.uvs.push_back(Vector2((float)std::atof(toks[1].c_str()),
-                                           (float)std::atof(toks[2].c_str())));
+            std::vector<std::string> toks = tokenize(t);
+            if (toks.size() >= 2) {
+                // v is optional and defaults to 0.
+                data.uvs.push_back(Vector2(parseFloat(toks[1]),
+                                           toks.size() >= 3 ? parseFloat(toks[2]) : 0.0f));
             }
         } else if (command == "vn") {
-            std::vector<std::string> toks = split(t, ' ');
+            std::vector<std::string> toks = tokenize(t);
             if (toks.size() >= 4) {
-                Vector3 n((float)std::atof(toks[1].c_str()),
-                          (float)std::atof(toks[2].c_str()),
-                          (float)std::atof(toks[3].c_str()));
+                Vector3 n(parseFloat(toks[1]), parseFloat(toks[2]), parseFloat(toks[3]));
                 float length = n.length();
-                if (length > 1e-8f) {
-                    data.normals.push_back(n / length);
-                }
+                // Keep a placeholder for degenerate normals so later
+                // indices still line up.
+                data.normals.push_back(length > 1e-8f ? n / length : Vector3(0, 1, 0));
             }
         } else if (command == "mtllib") {
             std::string name = trim(t.substr(6));
@@ -141,7 +172,7 @@ bool parseObjFile(const std::string& path, ObjData& data) {
             event.firstTriangle = data.triangles.size();
             data.usemtlEvents.push_back(event);
         } else if (command == "f") {
-            std::vector<std::string> toks = split(t, ' ');
+            std::vector<std::string> toks = tokenize(t);
             std::vector<ObjVertexRef> face;
             for (size_t i = 1; i < toks.size(); i++) {
                 std::vector<std::string> parts = split(toks[i], '/');
@@ -214,21 +245,31 @@ void loadMtllib(const std::string& path, const std::string& baseDir,
                 continue;
             }
             Material& current = it->second;
+            std::vector<std::string> toks = tokenize(t);
             if (command == "Kd") {
-                std::vector<std::string> toks = split(t, ' ');
                 if (toks.size() >= 4) {
-                    current.baseColor.r = (float)std::atof(toks[1].c_str());
-                    current.baseColor.g = (float)std::atof(toks[2].c_str());
-                    current.baseColor.b = (float)std::atof(toks[3].c_str());
+                    current.baseColor.r = parseFloat(toks[1], 1.0f);
+                    current.baseColor.g = parseFloat(toks[2], 1.0f);
+                    current.baseColor.b = parseFloat(toks[3], 1.0f);
                 }
             } else if (command == "d" || command == "Tr") {
-                float value = (float)std::atof(t.substr(2).c_str());
-                if (command == "Tr") {
-                    value = 1.0f - value;
+                if (toks.size() >= 2) {
+                    float value = parseFloat(toks.back(), 1.0f); // skips "-halo"
+                    if (command == "Tr") {
+                        value = 1.0f - value;
+                    }
+                    current.baseColor.a = value;
                 }
-                current.baseColor.a = value;
+            } else if (command == "Ns" && toks.size() >= 2) {
+                // Map Phong shininess (0..1000) to an approximate roughness.
+                float ns = parseFloat(toks[1], 0.0f);
+                current.roughness = std::sqrt(2.0f / (ns + 2.0f));
+            } else if (command == "Pr" && toks.size() >= 2) {
+                current.roughness = parseFloat(toks[1], current.roughness);
+            } else if (command == "Pm" && toks.size() >= 2) {
+                current.metallic = parseFloat(toks[1], current.metallic);
             } else if (command == "map_Kd") {
-                std::string textureName = trim(t.substr(6));
+                std::string textureName = textureFileName(toks);
                 if (!textureName.empty()) {
                     std::string texturePath = baseDir + "/" + textureName;
                     uint32_t w = 0, h = 0;
@@ -311,7 +352,9 @@ Mesh buildMeshForTriangles(Renderer& renderer, const ObjData& data,
             } else {
                 Vertex vertex;
                 vertex.position = data.positions[ref.position];
-                vertex.color = {1.0f, 1.0f, 1.0f, 1.0f};
+                vertex.color = (size_t)ref.position < data.colors.size()
+                                   ? data.colors[ref.position]
+                                   : Vector4(1.0f, 1.0f, 1.0f, 1.0f);
                 vertex.uv = (ref.uv >= 0) ? data.uvs[ref.uv] : Vector2(0, 0);
                 vertex.normal =
                     (ref.normal >= 0) ? data.normals[ref.normal] : flatNormal;
