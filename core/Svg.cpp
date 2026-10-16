@@ -630,6 +630,15 @@ struct PathParser {
         }
     }
 
+    // Reads an "x y" pair. The two reads must be sequenced: writing
+    // Vector2(num(), num()) leaves the evaluation order unspecified, and GCC
+    // and MSVC evaluate right-to-left, which swaps the coordinates.
+    Vector2 point() {
+        float x = num();
+        float y = num();
+        return Vector2(x, y);
+    }
+
     bool peekNumber() {
         skip();
         if (i >= s.size()) {
@@ -825,9 +834,9 @@ bool parsePathData(const std::string& d, std::vector<Subpath>& out) {
         case 'C':
         case 'c':
             while (p.peekNumber()) {
-                Vector2 c1(p.num(), p.num());
-                Vector2 c2(p.num(), p.num());
-                Vector2 e(p.num(), p.num());
+                Vector2 c1 = p.point();
+                Vector2 c2 = p.point();
+                Vector2 e = p.point();
                 if (rel) {
                     c1 = c1 + cur;
                     c2 = c2 + cur;
@@ -846,8 +855,8 @@ bool parsePathData(const std::string& d, std::vector<Subpath>& out) {
                                  ? Vector2(2.0f * cur.x - cubicControl.x,
                                            2.0f * cur.y - cubicControl.y)
                                  : cur;
-                Vector2 c2(p.num(), p.num());
-                Vector2 e(p.num(), p.num());
+                Vector2 c2 = p.point();
+                Vector2 e = p.point();
                 if (rel) {
                     c2 = c2 + cur;
                     e = e + cur;
@@ -860,8 +869,8 @@ bool parsePathData(const std::string& d, std::vector<Subpath>& out) {
         case 'Q':
         case 'q':
             while (p.peekNumber()) {
-                Vector2 c1(p.num(), p.num());
-                Vector2 e(p.num(), p.num());
+                Vector2 c1 = p.point();
+                Vector2 e = p.point();
                 if (rel) {
                     c1 = c1 + cur;
                     e = e + cur;
@@ -879,7 +888,7 @@ bool parsePathData(const std::string& d, std::vector<Subpath>& out) {
                                  ? Vector2(2.0f * cur.x - quadControl.x,
                                            2.0f * cur.y - quadControl.y)
                                  : cur;
-                Vector2 e(p.num(), p.num());
+                Vector2 e = p.point();
                 if (rel) {
                     e = e + cur;
                 }
@@ -895,7 +904,7 @@ bool parsePathData(const std::string& d, std::vector<Subpath>& out) {
                 float rot = p.num();
                 bool large = p.num() != 0.0f;
                 bool sweep = p.num() != 0.0f;
-                Vector2 e(p.num(), p.num());
+                Vector2 e = p.point();
                 if (rel) {
                     e = e + cur;
                 }
